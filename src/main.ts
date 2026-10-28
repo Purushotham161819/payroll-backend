@@ -9,7 +9,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
   app.enableCors({
     origin: 'http://localhost:4200',
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT'],
     allowedHeaders: ['Content-Type'],
   });
 

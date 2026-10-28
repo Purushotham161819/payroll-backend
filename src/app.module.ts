@@ -3,6 +3,8 @@ import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { EmployeesModule } from "./employees/employees.module";
 import { MongooseModule } from "@nestjs/mongoose";
+import { SalaryComponentsModule } from './salary-components/salary-components.module';
+import { StatutoryDeductionsModule } from './statutory-deductions/statutory-deductions.module';
 
 @Module({
   imports: [
@@ -11,6 +13,8 @@ import { MongooseModule } from "@nestjs/mongoose";
       { serverSelectionTimeoutMS: 5000, retryAttempts: 2, retryDelay: 1000 },
     ),
     EmployeesModule,
+    SalaryComponentsModule,
+    StatutoryDeductionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
