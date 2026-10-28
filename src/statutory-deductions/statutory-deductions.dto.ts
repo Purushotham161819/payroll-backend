@@ -1,6 +1,11 @@
-import { IsNumber, Max, Min } from 'class-validator';
+import { IsNumber, Max, Min, ValidateIf } from 'class-validator';
 
 export class StatutoryDeductionsDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
+  @Min(0)
+  annualEsiCeilingLimit?: number;
+
   @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
   @Min(0)
   wageCap!: number;

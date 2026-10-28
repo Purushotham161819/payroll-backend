@@ -31,7 +31,16 @@ integration('Employees MongoDB reads', () => {
     const response = await request(app.getHttpServer())
       .get('/employees')
       .expect(200);
-    expect(response.body).toEqual(JSON.parse(JSON.stringify(documents)));
+    expect(response.body).toEqual(
+      JSON.parse(
+        JSON.stringify(
+          documents.map((employee) => ({
+            ...employee,
+            payFrequency: employee.payFrequency ?? 'Monthly',
+          })),
+        ),
+      ),
+    );
     if (documents.length === 0) expect(response.body).toEqual([]);
     await request(app.getHttpServer())
       .get('/employees/000000000000000000000000')

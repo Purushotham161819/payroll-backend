@@ -21,6 +21,9 @@ export class StatutoryDeductionsService {
   }
   async save(dto: StatutoryDeductionsDto) {
     const values = {
+      ...(dto.annualEsiCeilingLimit !== undefined
+        ? { annualEsiCeilingLimit: dto.annualEsiCeilingLimit }
+        : {}),
       wageCap: dto.wageCap,
       epfEmployerContributionPercentage: dto.epfEmployerContributionPercentage,
       epsEmployerContributionPercentage: dto.epsEmployerContributionPercentage,

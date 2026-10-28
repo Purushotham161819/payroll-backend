@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { StatutoryDeductionsService } from './statutory-deductions.service';
 import { StatutoryDeductionsDto } from './statutory-deductions.dto';
 
-export type ContributionRate = Exclude<keyof StatutoryDeductionsDto, 'wageCap'>;
+export type ContributionRate = Exclude<keyof StatutoryDeductionsDto, 'wageCap' | 'annualEsiCeilingLimit'>;
 
 @Injectable()
 export class StatutoryContributionService {

@@ -2,6 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 @Schema({ collection: 'statutory_deductions', timestamps: true })
 export class StatutoryDeductions {
+  @Prop({ type: Number, min: 0, validate: Number.isFinite })
+  annualEsiCeilingLimit?: number;
+
   // The fixed MongoDB primary key makes concurrent upserts target one record.
   @Prop({ type: String, default: 'current', enum: ['current'] }) _id!: string;
   @Prop({ required: true, min: 0, validate: Number.isFinite }) wageCap!: number;

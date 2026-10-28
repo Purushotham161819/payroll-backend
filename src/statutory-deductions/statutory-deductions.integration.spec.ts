@@ -98,4 +98,20 @@ integration('Statutory deductions persisted HTTP configuration', () => {
     await start();
     expect((await api().get(path).expect(200)).body).toEqual(before.body);
   }, 30000);
+  it('preserves legacy EPF settings and independently creates, edits and retains the ESI ceiling', async () => {
+    const api = request(app.getHttpServer());
+    const legacy = (await api.get(path).expect(200)).body;
+    expect(legacy.annualEsiCeilingLimit).toBeUndefined();
+    const first = (await api.put(path).send({ ...config, wageCap: legacy.wageCap, annualEsiCeilingLimit: 250000.25 }).expect(200)).body;
+    expect(first).toMatchObject({ wageCap: legacy.wageCap, annualEsiCeilingLimit: 250000.25 });
+    expect(first._id).toBe(legacy._id);
+    expect(first.createdAt).toBe(legacy.createdAt);
+    await api.put(path).send({ ...config, wageCap: 180000.50 }).expect(200);
+    expect((await api.get(path)).body).toMatchObject({ wageCap: 180000.50, annualEsiCeilingLimit: 250000.25 });
+    await api.put(path).send({ ...config, wageCap: 180000.50, annualEsiCeilingLimit: 300000.75 }).expect(200);
+    for (const value of [-1, 1.234, null, 'invalid'])
+      await api.put(path).send({ ...config, annualEsiCeilingLimit: value }).expect(400);
+    await app.close(); await start();
+    expect((await request(app.getHttpServer()).get(path)).body).toMatchObject({ wageCap: 180000.50, annualEsiCeilingLimit: 300000.75 });
+  });
 });

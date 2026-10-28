@@ -2,12 +2,15 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Error as MongooseError } from 'mongoose';
+import { Model, Types, Error as MongooseError } from 'mongoose';
 import { Employee } from './schemas/employee.schema';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { DEFAULT_PAY_FREQUENCY } from './pay-frequency';
 
 @Injectable()
 export class EmployeesService {
@@ -17,7 +20,10 @@ export class EmployeesService {
 
   async create(dto: CreateEmployeeDto) {
     try {
-      return await this.employees.create(dto);
+      return await this.employees.create({
+        ...dto,
+        payFrequency: dto.payFrequency ?? DEFAULT_PAY_FREQUENCY,
+      });
     } catch (error) {
       if (
         typeof error === 'object' &&
@@ -44,6 +50,41 @@ export class EmployeesService {
     } catch {
       throw new ServiceUnavailableException(
         'Unable to retrieve employees. Please try again later.',
+      );
+    }
+  }
+
+  async update(id: string, dto: UpdateEmployeeDto) {
+    if (!Types.ObjectId.isValid(id))
+      throw new BadRequestException('Invalid employee ID.');
+    try {
+      const fields = Object.fromEntries(
+        Object.entries(dto).filter(([, value]) => value !== undefined),
+      );
+      const employee = await this.employees
+        .findByIdAndUpdate(
+          id,
+          { $set: fields },
+          { returnDocument: 'after', runValidators: true },
+        )
+        .exec();
+      if (!employee) throw new NotFoundException('Employee not found.');
+      return employee;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 11000
+      )
+        throw new ConflictException(
+          'An employee with this email address already exists.',
+        );
+      if (error instanceof MongooseError.ValidationError)
+        throw new BadRequestException('Employee data is invalid');
+      throw new ServiceUnavailableException(
+        'Unable to save employee. Please try again later.',
       );
     }
   }

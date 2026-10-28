@@ -6,10 +6,17 @@ import {
   Min,
   Matches,
   IsEmail,
+  IsIn,
+  ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { PAY_FREQUENCIES } from '../pay-frequency';
 
 export class CreateEmployeeDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsIn(PAY_FREQUENCIES)
+  payFrequency?: (typeof PAY_FREQUENCIES)[number];
+
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )

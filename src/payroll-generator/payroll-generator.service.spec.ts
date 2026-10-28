@@ -20,11 +20,15 @@ describe('Saved-data annual payroll orchestration', () => {
       showInPayslip: true,
     }));
     const config = {
+      wageCap: 180000.50,
+      annualEsiCeilingLimit: 300000.75,
       epsEmployerContributionPercentage: 8,
       epfEmployerContributionPercentage: 4,
       esiEmployerContributionPercentage: 3,
     };
     const before = JSON.stringify({ employee, records, config });
+    const calculator = new SalaryCalculationService();
+    const calculateAnnual = jest.spyOn(calculator, 'calculateAnnual');
     const service = new PayrollGeneratorService(
       {
         find: jest
@@ -33,9 +37,10 @@ describe('Saved-data annual payroll orchestration', () => {
       } as never,
       { findAll: async () => records } as never,
       { get: async () => config } as never,
-      new SalaryCalculationService(),
+      calculator,
     );
     const result = await service.annual();
+    expect(calculateAnnual).toHaveBeenCalledWith(employee.annualCtc, records, config);
     expect(result.employees[0].calculation.annual.annualGrossWages).toBe(
       100000,
     );
