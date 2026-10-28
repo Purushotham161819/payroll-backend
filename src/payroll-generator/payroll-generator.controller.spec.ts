@@ -55,6 +55,24 @@ describe('Payroll Generator module HTTP contract', () => {
       expect(
         response.body.employees[0].calculation.annual.annualGrossWages,
       ).toBe(100000);
+      const selected = await request(app.getHttpServer())
+        .post('/payroll/annual')
+        .send({ selectedComponentIds: [] })
+        .expect(201);
+      expect(selected.body.employees).toEqual(response.body.employees);
+      expect(
+        selected.body.reportComponents.map(
+          (c: { componentId: string }) => c.componentId,
+        ),
+      ).toEqual(['BASIC', 'DA', 'RA']);
+      await request(app.getHttpServer())
+        .post('/payroll/annual')
+        .send({ selectedComponentIds: ['unknown'] })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/payroll/annual')
+        .send({ selectedComponentIds: 'BASIC' })
+        .expect(400);
       settings.get.mockResolvedValueOnce(null);
       const invalid = await request(app.getHttpServer())
         .get('/payroll/annual')

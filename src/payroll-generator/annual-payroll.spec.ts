@@ -45,14 +45,34 @@ function verify(
   const k = result.annual;
   const near = (actual: number, expected: number) =>
     expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.021);
-  near(k.employerEpsContribution, (k.annualCoreWages * r.epsEmployerContributionPercentage) / 100);
-  near(k.employerEpfContribution, (k.annualCoreWages * r.epfEmployerContributionPercentage) / 100);
-  near(k.employerEsiContribution, (k.annualComplianceWageBase * r.esiEmployerContributionPercentage) / 100);
-  near(k.annualGrossWages, k.annualCtc - k.employerEpsContribution - k.employerEpfContribution - k.employerEsiContribution);
+  near(
+    k.employerEpsContribution,
+    (k.annualCoreWages * r.epsEmployerContributionPercentage) / 100,
+  );
+  near(
+    k.employerEpfContribution,
+    (k.annualCoreWages * r.epfEmployerContributionPercentage) / 100,
+  );
+  near(
+    k.employerEsiContribution,
+    (k.annualComplianceWageBase * r.esiEmployerContributionPercentage) / 100,
+  );
+  near(
+    k.annualGrossWages,
+    k.annualCtc -
+      k.employerEpsContribution -
+      k.employerEpfContribution -
+      k.employerEsiContribution,
+  );
   near(k.annualBasicSalary, k.annualGrossWages * 0.4);
   near(k.annualDearnessAllowance, k.annualBasicSalary * 0.1);
   near(k.annualRetainingAllowance, k.annualBasicSalary * 0.15);
-  near(k.annualCoreWages, k.annualBasicSalary + k.annualDearnessAllowance + k.annualRetainingAllowance);
+  near(
+    k.annualCoreWages,
+    k.annualBasicSalary +
+      k.annualDearnessAllowance +
+      k.annualRetainingAllowance,
+  );
   near(
     k.annualTotalAllowances,
     result.components
@@ -62,7 +82,10 @@ function verify(
       )
       .reduce((s, c) => s + c.annual, 0),
   );
-  near(k.annualExcessAllowance, Math.max(0, k.annualTotalAllowances - 0.5 * k.annualGrossWages));
+  near(
+    k.annualExcessAllowance,
+    Math.max(0, k.annualTotalAllowances - 0.5 * k.annualGrossWages),
+  );
   near(k.annualComplianceWageBase, k.annualCoreWages + k.annualExcessAllowance);
   expect(result.diagnostics.equationResidual).toBe(0);
 }
@@ -217,6 +240,8 @@ describe('Annual Excel payroll system', () => {
       expect(result.annual).toEqual({
         annualCtc: Math.round(ctc * 100) / 100,
         ...expected,
+        annualTotalDeductions: 0,
+        annualNetPay: expected.annualGrossWages,
       });
       verify(result, r, components);
     },

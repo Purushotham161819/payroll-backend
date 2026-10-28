@@ -27,15 +27,36 @@ export class StatutoryDeductionsService {
       wageCap: dto.wageCap,
       epfEmployerContributionPercentage: dto.epfEmployerContributionPercentage,
       epsEmployerContributionPercentage: dto.epsEmployerContributionPercentage,
-      epfEmployeeContributionPercentage: dto.epfEmployeeContributionPercentage,
+      ...(dto.epfEmployeeContributionPercentage !== undefined
+        ? {
+            epfEmployeeContributionPercentage:
+              dto.epfEmployeeContributionPercentage,
+          }
+        : {}),
       esiEmployerContributionPercentage: dto.esiEmployerContributionPercentage,
-      esiEmployeeContributionPercentage: dto.esiEmployeeContributionPercentage,
+      ...(dto.esiEmployeeContributionPercentage !== undefined
+        ? {
+            esiEmployeeContributionPercentage:
+              dto.esiEmployeeContributionPercentage,
+          }
+        : {}),
     };
     const update = (upsert: boolean) =>
       this.model
         .findOneAndUpdate(
           { _id: 'current' },
-          { $set: values },
+          {
+            $set: values,
+            $setOnInsert: {
+              // Retain legacy values on updates; initialize absent employee settings only on first save.
+              ...(dto.epfEmployeeContributionPercentage === undefined
+                ? { epfEmployeeContributionPercentage: 0 }
+                : {}),
+              ...(dto.esiEmployeeContributionPercentage === undefined
+                ? { esiEmployeeContributionPercentage: 0 }
+                : {}),
+            },
+          },
           { upsert, returnDocument: 'after', runValidators: true },
         )
         .lean()

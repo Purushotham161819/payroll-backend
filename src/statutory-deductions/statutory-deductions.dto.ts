@@ -10,18 +10,30 @@ export class StatutoryDeductionsDto {
   @Min(0)
   wageCap!: number;
 
-  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) @Max(100)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
   epfEmployerContributionPercentage!: number;
 
-  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) @Max(100)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
   epsEmployerContributionPercentage!: number;
 
-  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) @Max(100)
-  epfEmployeeContributionPercentage!: number;
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
+  epfEmployeeContributionPercentage?: number;
 
-  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) @Max(100)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
   esiEmployerContributionPercentage!: number;
 
-  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) @Max(100)
-  esiEmployeeContributionPercentage!: number;
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100)
+  esiEmployeeContributionPercentage?: number;
 }

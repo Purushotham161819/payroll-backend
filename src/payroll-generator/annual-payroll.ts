@@ -241,10 +241,19 @@ export function annualPayroll(
         showInPayslip: c.showInPayslip,
       };
     });
+  // Reuse reported annual deduction cells exactly once, independent of report visibility.
+  const totalDeductions = amounts
+    .filter((c) => c.category === 'deduction')
+    .reduce((total, c) => total.add(R.of(c.annual)), zero);
+  const netPay = R.of(G.money()).sub(totalDeductions);
   return {
-    annual: Object.fromEntries(
-      Object.entries(cells).map(([k, v]) => [k, v.money()]),
-    ),
+    annual: {
+      ...Object.fromEntries(
+        Object.entries(cells).map(([k, v]) => [k, v.money()]),
+      ),
+      annualTotalDeductions: totalDeductions.money(),
+      annualNetPay: netPay.money(),
+    },
     components: amounts,
     diagnostics: {
       branch,
