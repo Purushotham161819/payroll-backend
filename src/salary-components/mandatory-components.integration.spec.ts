@@ -5,7 +5,7 @@ import { Connection } from 'mongoose';
 import request from 'supertest';
 import { SalaryComponentsModule } from './salary-components.module';
 import { SalaryComponentsService } from './salary-components.service';
-import { SalaryCalculationService } from './salary-calculation.service';
+import { SalaryCalculationService } from '../payroll-generator/salary-calculation.service';
 
 const integration =
   process.env.RUN_MONGO_TESTS === '1' ? describe : describe.skip;
@@ -23,6 +23,7 @@ integration(
           }),
           SalaryComponentsModule,
         ],
+        providers: [SalaryCalculationService],
       }).compile();
       app = module.createNestApplication();
       app.useGlobalPipes(

@@ -1,7 +1,7 @@
-import { PayrollController } from './payroll.controller';
+import { PayrollGeneratorService } from './payroll-generator.service';
 import { SalaryCalculationService } from './salary-calculation.service';
 
-describe('Saved-data annual payroll endpoint', () => {
+describe('Saved-data annual payroll orchestration', () => {
   it('uses saved CTC, components and settings without writing records', async () => {
     const employee = {
       _id: 'employee',
@@ -25,7 +25,7 @@ describe('Saved-data annual payroll endpoint', () => {
       esiEmployerContributionPercentage: 3,
     };
     const before = JSON.stringify({ employee, records, config });
-    const controller = new PayrollController(
+    const service = new PayrollGeneratorService(
       {
         find: jest
           .fn()
@@ -35,7 +35,7 @@ describe('Saved-data annual payroll endpoint', () => {
       { get: async () => config } as never,
       new SalaryCalculationService(),
     );
-    const result = await controller.annual();
+    const result = await service.annual();
     expect(result.employees[0].calculation.annual.annualGrossWages).toBe(
       100000,
     );

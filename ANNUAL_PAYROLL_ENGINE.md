@@ -34,7 +34,7 @@ No wage caps, monthly eligibility rules, employee contribution formulas, new net
 
 ## Changed files
 
-Backend: `src/salary-components/annual-payroll.ts`, `decimal-ratio.ts`, `annual-payroll.spec.ts`, `payroll.controller.ts`, `payroll.controller.spec.ts`, `salary-calculation.service.ts`, `salary-component.schema.ts`, `salary-component.dto.ts`, `salary-components.module.ts`.
+Backend calculation and orchestration: `src/payroll-generator/annual-payroll.ts`, `decimal-ratio.ts`, `annual-payroll.spec.ts`, `salary-calculation.service.ts`, `payroll-generator.service.ts`, `payroll-generator.service.spec.ts`, `payroll-generator.controller.ts`, `payroll-generator.controller.spec.ts`, `payroll-generator.module.ts`. Configuration remains in `src/salary-components/` (`salary-component.schema.ts`, `salary-component.dto.ts`, `salary-components.module.ts`).
 
 Frontend: `src/app/payroll/payroll-calculation.ts`, `payroll-calculation.spec.ts`, `payroll-report.service.ts`, `payroll-generator.ts`, `src/app/settings/settings.ts`, `settings.html`, `e2e/annual-payroll-pdf.spec.ts`, `e2e/mandatory-components.spec.ts`, `e2e/settings.spec.ts`.
 

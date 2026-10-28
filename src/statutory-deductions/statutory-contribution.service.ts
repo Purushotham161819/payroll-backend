@@ -11,15 +11,34 @@ export class StatutoryContributionService {
   // This arithmetic foundation applies no cap, allocation, or rounding policy.
   async calculate(contributionBase: number, rate: ContributionRate) {
     if (!Number.isFinite(contributionBase) || contributionBase < 0)
-      throw new BadRequestException('Contribution base must be a finite, non-negative number.');
+      throw new BadRequestException(
+        'Contribution base must be a finite, non-negative number.',
+      );
     const config = await this.settings.get();
-    if (!config) throw new BadRequestException('Configure statutory deductions before calculating contributions.');
-    const allowed: ContributionRate[] = ['epfEmployerContributionPercentage', 'epsEmployerContributionPercentage', 'epfEmployeeContributionPercentage', 'esiEmployerContributionPercentage', 'esiEmployeeContributionPercentage'];
-    if (!allowed.includes(rate)) throw new BadRequestException('Unknown contribution rate.');
+    if (!config)
+      throw new BadRequestException(
+        'Configure statutory deductions before calculating contributions.',
+      );
+    const allowed: ContributionRate[] = [
+      'epfEmployerContributionPercentage',
+      'epsEmployerContributionPercentage',
+      'epfEmployeeContributionPercentage',
+      'esiEmployerContributionPercentage',
+      'esiEmployeeContributionPercentage',
+    ];
+    if (!allowed.includes(rate))
+      throw new BadRequestException('Unknown contribution rate.');
     const percentage = config[rate];
     if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100)
-      throw new BadRequestException('Configured contribution percentage is invalid.');
+      throw new BadRequestException(
+        'Configured contribution percentage is invalid.',
+      );
     const amount = contributionBase * (percentage / 100);
-    return { contributionBase, percentage, amount, configuredWageCap: config.wageCap };
+    return {
+      contributionBase,
+      percentage,
+      amount,
+      configuredWageCap: config.wageCap,
+    };
   }
 }

@@ -6,6 +6,8 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { SalaryComponentsModule } from './salary-components/salary-components.module';
 import { StatutoryDeductionsModule } from './statutory-deductions/statutory-deductions.module';
 
+import { PayrollGeneratorModule } from './payroll-generator/payroll-generator.module';
+
 @Module({
   imports: [
     MongooseModule.forRoot(
@@ -14,6 +16,7 @@ import { StatutoryDeductionsModule } from './statutory-deductions/statutory-dedu
     ),
     EmployeesModule,
     SalaryComponentsModule,
+    PayrollGeneratorModule,
     StatutoryDeductionsModule,
   ],
   controllers: [AppController],

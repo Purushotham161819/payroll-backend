@@ -6,10 +6,18 @@ import { StatutoryDeductionsDto } from './statutory-deductions.dto';
 
 @Injectable()
 export class StatutoryDeductionsService {
-  constructor(@InjectModel(StatutoryDeductions.name) private readonly model: Model<StatutoryDeductions>) {}
+  constructor(
+    @InjectModel(StatutoryDeductions.name)
+    private readonly model: Model<StatutoryDeductions>,
+  ) {}
   async get() {
-    try { return await this.model.findById('current').lean().exec(); }
-    catch { throw new ServiceUnavailableException('Unable to load statutory deductions. Please try again.'); }
+    try {
+      return await this.model.findById('current').lean().exec();
+    } catch {
+      throw new ServiceUnavailableException(
+        'Unable to load statutory deductions. Please try again.',
+      );
+    }
   }
   async save(dto: StatutoryDeductionsDto) {
     const values = {
@@ -20,16 +28,35 @@ export class StatutoryDeductionsService {
       esiEmployerContributionPercentage: dto.esiEmployerContributionPercentage,
       esiEmployeeContributionPercentage: dto.esiEmployeeContributionPercentage,
     };
-    const update = (upsert: boolean) => this.model.findOneAndUpdate(
-      { _id: 'current' }, { $set: values }, { upsert, returnDocument: 'after', runValidators: true },
-    ).lean().exec();
-    try { return await update(true); }
-    catch (error) {
+    const update = (upsert: boolean) =>
+      this.model
+        .findOneAndUpdate(
+          { _id: 'current' },
+          { $set: values },
+          { upsert, returnDocument: 'after', runValidators: true },
+        )
+        .lean()
+        .exec();
+    try {
+      return await update(true);
+    } catch (error) {
       // Another writer may have inserted the singleton between matching and upserting.
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) {
-        try { const saved = await update(false); if (saved) return saved; } catch { /* report the save failure below */ }
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 11000
+      ) {
+        try {
+          const saved = await update(false);
+          if (saved) return saved;
+        } catch {
+          /* report the save failure below */
+        }
       }
-      throw new ServiceUnavailableException('Unable to save statutory deductions. Please try again.');
+      throw new ServiceUnavailableException(
+        'Unable to save statutory deductions. Please try again.',
+      );
     }
   }
 }

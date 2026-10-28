@@ -5,10 +5,16 @@ export class StatutoryDeductions {
   // The fixed MongoDB primary key makes concurrent upserts target one record.
   @Prop({ type: String, default: 'current', enum: ['current'] }) _id!: string;
   @Prop({ required: true, min: 0, validate: Number.isFinite }) wageCap!: number;
-  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite }) epfEmployerContributionPercentage!: number;
-  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite }) epsEmployerContributionPercentage!: number;
-  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite }) epfEmployeeContributionPercentage!: number;
-  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite }) esiEmployerContributionPercentage!: number;
-  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite }) esiEmployeeContributionPercentage!: number;
+  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite })
+  epfEmployerContributionPercentage!: number;
+  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite })
+  epsEmployerContributionPercentage!: number;
+  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite })
+  epfEmployeeContributionPercentage!: number;
+  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite })
+  esiEmployerContributionPercentage!: number;
+  @Prop({ required: true, min: 0, max: 100, validate: Number.isFinite })
+  esiEmployeeContributionPercentage!: number;
 }
-export const StatutoryDeductionsSchema = SchemaFactory.createForClass(StatutoryDeductions);
+export const StatutoryDeductionsSchema =
+  SchemaFactory.createForClass(StatutoryDeductions);

@@ -6,9 +6,12 @@ import { EmployeesController } from './employees.controller';
 import { EmployeeEmailIndexService } from './employee-email-index.service';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Employee.name, schema: EmployeeSchema }])],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Employee.name, schema: EmployeeSchema },
+    ]),
+  ],
   controllers: [EmployeesController],
   providers: [EmployeesService, EmployeeEmailIndexService],
 })
 export class EmployeesModule {}
-

@@ -16,8 +16,9 @@ describe('AppController', () => {
 
   describe('root', () => {
     it('should return "My Payroll Application is Running!"', () => {
-      expect(appController.getHello()).toBe('My Payroll Application is Running!');
+      expect(appController.getHello()).toBe(
+        'My Payroll Application is Running!',
+      );
     });
   });
 });
-

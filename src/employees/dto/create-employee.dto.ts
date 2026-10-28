@@ -9,7 +9,6 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
-
 export class CreateEmployeeDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
@@ -21,12 +20,16 @@ export class CreateEmployeeDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/\S/, { message: 'firstName must contain a non-whitespace character' })
+  @Matches(/\S/, {
+    message: 'firstName must contain a non-whitespace character',
+  })
   firstName!: string;
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/\S/, { message: 'lastName must contain a non-whitespace character' })
+  @Matches(/\S/, {
+    message: 'lastName must contain a non-whitespace character',
+  })
   lastName!: string;
 
   @IsDateString({ strict: true })
@@ -39,4 +42,3 @@ export class CreateEmployeeDto {
   @Min(0)
   annualCtc!: number;
 }
-

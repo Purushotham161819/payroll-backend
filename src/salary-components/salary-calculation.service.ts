@@ -1,12 +1,11 @@
-import { annualPayroll, EmployerRates } from './annual-payroll';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { MANDATORY_COMPONENTS } from './mandatory-components';
 
 export interface CalculationComponent {
   _id: { toString(): string };
   code: string;
-  category: 'earning' | 'deduction' | 'allowance';
-  calculationBaseType: 'annual_ctc' | 'gross_wages' | 'core_wages' | 'salary_component';
+  category: 'earning' | 'deduction';
+  calculationBaseType: 'annual_ctc' | 'salary_component';
   calculationBaseComponentId?: { toString(): string } | null;
   calculationType: 'percentage' | 'fixed';
   calculationValue: number | null;
@@ -18,8 +17,6 @@ export interface CalculationComponent {
 // Round each annual component to paise, then derive its rounded monthly amount.
 @Injectable()
 export class SalaryCalculationService {
-  calculateAnnual(annualCtc: number, components: CalculationComponent[], settings: EmployerRates) { return annualPayroll(annualCtc, components, settings); }
-
   calculate(annualCtc: number, components: CalculationComponent[]) {
     for (const mandatory of MANDATORY_COMPONENTS) {
       const matches = components.filter((c) => c.code === mandatory.code);
@@ -120,5 +117,3 @@ export class SalaryCalculationService {
     return [...result.values()];
   }
 }
-
-
