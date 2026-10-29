@@ -1,17 +1,16 @@
 
+import './environment';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { configureSecurity } from './auth/http-security';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.enableShutdownHooks();
-  app.enableCors({
-    origin: 'http://localhost:4200',
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type'],
-  });
+  configureSecurity(app);
 
   app.useGlobalPipes(
     new ValidationPipe({

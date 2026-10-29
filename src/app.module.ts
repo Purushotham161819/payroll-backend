@@ -7,9 +7,11 @@ import { SalaryComponentsModule } from './salary-components/salary-components.mo
 import { StatutoryDeductionsModule } from './statutory-deductions/statutory-deductions.module';
 
 import { PayrollGeneratorModule } from './payroll-generator/payroll-generator.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
+    AuthModule,
     MongooseModule.forRoot(
       process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/payroll_db",
       { serverSelectionTimeoutMS: 5000, retryAttempts: 2, retryDelay: 1000 },
