@@ -62,6 +62,7 @@ describe('Statutory settings with hidden legacy employee fields', () => {
       .expect(200);
     expect(result.body).toEqual({
       ...config,
+      isEpfCeilingApplicable: false,
       epfEmployeeContributionPercentage: 0,
       esiEmployeeContributionPercentage: 0,
     });
@@ -97,10 +98,38 @@ describe('Statutory settings with hidden legacy employee fields', () => {
       .put('/settings/statutory-deductions')
       .send(values)
       .expect(200);
-    expect(saved).toEqual(values);
-    expect(update.mock.calls[0][1].$setOnInsert).toEqual({});
+    expect(saved).toEqual({ ...values, isEpfCeilingApplicable: false });
+    expect(update.mock.calls[0][1].$setOnInsert).toEqual({
+      isEpfCeilingApplicable: false,
+    });
+  });
+  it('defaults legacy records to uncapped and preserves explicit checkbox changes through save and reload', async () => {
+    saved = {
+      ...config,
+      epfEmployeeContributionPercentage: 12,
+      esiEmployeeContributionPercentage: 0.75,
+    };
+    expect(
+      (await request(app.getHttpServer()).get('/settings/statutory-deductions'))
+        .body.isEpfCeilingApplicable,
+    ).toBe(false);
+    for (const isEpfCeilingApplicable of [true, false]) {
+      await request(app.getHttpServer())
+        .put('/settings/statutory-deductions')
+        .send({ ...config, isEpfCeilingApplicable })
+        .expect(200);
+      expect(
+        (
+          await request(app.getHttpServer()).get(
+            '/settings/statutory-deductions',
+          )
+        ).body.isEpfCeilingApplicable,
+      ).toBe(isEpfCeilingApplicable);
+    }
   });
   it.each([
+    { isEpfCeilingApplicable: null },
+    { isEpfCeilingApplicable: 'true' },
     { epfEmployeeContributionPercentage: null },
     { esiEmployeeContributionPercentage: 101 },
     { epfEmployeeContributionPercentage: -1 },

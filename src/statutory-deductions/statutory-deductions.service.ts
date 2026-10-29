@@ -12,7 +12,13 @@ export class StatutoryDeductionsService {
   ) {}
   async get() {
     try {
-      return await this.model.findById('current').lean().exec();
+      const saved = await this.model.findById('current').lean().exec();
+      return saved
+        ? {
+            ...saved,
+            isEpfCeilingApplicable: saved.isEpfCeilingApplicable ?? false,
+          }
+        : null;
     } catch {
       throw new ServiceUnavailableException(
         'Unable to load statutory deductions. Please try again.',
@@ -21,6 +27,9 @@ export class StatutoryDeductionsService {
   }
   async save(dto: StatutoryDeductionsDto) {
     const values = {
+      ...(dto.isEpfCeilingApplicable !== undefined
+        ? { isEpfCeilingApplicable: dto.isEpfCeilingApplicable }
+        : {}),
       ...(dto.annualEsiCeilingLimit !== undefined
         ? { annualEsiCeilingLimit: dto.annualEsiCeilingLimit }
         : {}),
@@ -48,6 +57,9 @@ export class StatutoryDeductionsService {
           {
             $set: values,
             $setOnInsert: {
+              ...(dto.isEpfCeilingApplicable === undefined
+                ? { isEpfCeilingApplicable: false }
+                : {}),
               // Retain legacy values on updates; initialize absent employee settings only on first save.
               ...(dto.epfEmployeeContributionPercentage === undefined
                 ? { epfEmployeeContributionPercentage: 0 }
@@ -62,7 +74,13 @@ export class StatutoryDeductionsService {
         .lean()
         .exec();
     try {
-      return await update(true);
+      const saved = await update(true);
+      return saved
+        ? {
+            ...saved,
+            isEpfCeilingApplicable: saved.isEpfCeilingApplicable ?? false,
+          }
+        : saved;
     } catch (error) {
       // Another writer may have inserted the singleton between matching and upserting.
       if (
@@ -73,7 +91,11 @@ export class StatutoryDeductionsService {
       ) {
         try {
           const saved = await update(false);
-          if (saved) return saved;
+          if (saved)
+            return {
+              ...saved,
+              isEpfCeilingApplicable: saved.isEpfCeilingApplicable ?? false,
+            };
         } catch {
           /* report the save failure below */
         }

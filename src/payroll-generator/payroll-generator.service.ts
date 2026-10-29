@@ -15,7 +15,7 @@ export class PayrollGeneratorService {
     private readonly settings: StatutoryDeductionsService,
     private readonly calculator: SalaryCalculationService,
   ) {}
-  async annual(selectedComponentIds?: unknown) {
+  async annual(selectedComponentIds?: unknown, includeTerminated = false) {
     const [employees, components, settings] = await Promise.all([
       this.employees.find().lean().exec(),
       this.components.findAll(),
@@ -55,14 +55,18 @@ export class PayrollGeneratorService {
     return {
       components,
       reportComponents,
-      employees: employees.map((employee) => ({
-        employee,
-        calculation: this.calculator.calculateAnnual(
-          employee.annualCtc,
-          components,
-          settings,
-        ),
-      })),
+      employees: employees
+        .filter(
+          (employee) => includeTerminated || employee.status !== 'Terminated',
+        )
+        .map((employee) => ({
+          employee,
+          calculation: this.calculator.calculateAnnual(
+            employee.annualCtc,
+            components,
+            settings,
+          ),
+        })),
     };
   }
 }

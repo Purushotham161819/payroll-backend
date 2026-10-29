@@ -1,3 +1,4 @@
+import { EmployeeIdentifierService } from './employee-identifier.service';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
@@ -24,6 +25,10 @@ describe('Employee POST HTTP contract without database writes', () => {
       controllers: [EmployeesController],
       providers: [
         EmployeesService,
+        {
+          provide: EmployeeIdentifierService,
+          useValue: { nextId: async () => 'EMP001' },
+        },
         { provide: getModelToken(Employee.name), useValue: { create } },
       ],
     }).compile();
@@ -67,6 +72,17 @@ describe('Employee POST HTTP contract without database writes', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects client-assigned employee IDs on create and update', async () => {
+    await request(app.getHttpServer())
+      .post('/employees')
+      .send({ ...body, employeeId: 'EMP999' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch('/employees/507f1f77bcf86cd799439011')
+      .send({ employeeId: 'EMP999' })
+      .expect(400);
+    expect(create).not.toHaveBeenCalled();
+  });
   it('returns 400 for invalid email without calling the model', async () => {
     await request(app.getHttpServer())
       .post('/employees')

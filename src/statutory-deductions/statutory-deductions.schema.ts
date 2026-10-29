@@ -2,6 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 @Schema({ collection: 'statutory_deductions', timestamps: true })
 export class StatutoryDeductions {
+  @Prop({ type: Boolean, default: false })
+  isEpfCeilingApplicable!: boolean;
   @Prop({ type: Number, min: 0, validate: Number.isFinite })
   annualEsiCeilingLimit?: number;
 

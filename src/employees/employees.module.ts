@@ -1,3 +1,4 @@
+import { EmployeeIdentifierService } from './employee-identifier.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Employee, EmployeeSchema } from './schemas/employee.schema';
 import { Module } from '@nestjs/common';
@@ -12,6 +13,10 @@ import { EmployeeEmailIndexService } from './employee-email-index.service';
     ]),
   ],
   controllers: [EmployeesController],
-  providers: [EmployeesService, EmployeeEmailIndexService],
+  providers: [
+    EmployeeIdentifierService,
+    EmployeesService,
+    EmployeeEmailIndexService,
+  ],
 })
 export class EmployeesModule {}

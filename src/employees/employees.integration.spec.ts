@@ -1,3 +1,4 @@
+import { EmployeeIdentifierService } from './employee-identifier.service';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
@@ -15,7 +16,15 @@ integration('Employees MongoDB reads', () => {
   async function start() {
     const module = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(EmployeeIdentifierService)
+      .useValue({
+        onModuleInit: async () => {},
+        nextId: async () => {
+          throw new Error('Read-only test must not create employees.');
+        },
+      })
+      .compile();
     app = module.createNestApplication();
     await app.init();
   }
@@ -37,6 +46,8 @@ integration('Employees MongoDB reads', () => {
           documents.map((employee) => ({
             ...employee,
             payFrequency: employee.payFrequency ?? 'Monthly',
+            status: employee.status ?? 'Active',
+            lifecycleVersion: employee.lifecycleVersion ?? 0,
           })),
         ),
       ),

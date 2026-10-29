@@ -22,8 +22,10 @@ export class CreateSalaryComponentDto {
   @IsString()
   @IsNotEmpty()
   code!: string;
-  @IsIn(['earning', 'deduction', 'allowance']) category!: 'earning' | 'deduction' | 'allowance';
-  @IsIn(['annual_ctc', 'gross_wages', 'core_wages', 'salary_component']) calculationBaseType!:
+  @IsIn(['earning', 'deduction', 'allowance']) category!:
+    'earning' | 'deduction' | 'allowance';
+  @IsIn(['annual_ctc', 'gross_wages', 'core_wages', 'salary_component'])
+  calculationBaseType!:
     'annual_ctc' | 'gross_wages' | 'core_wages' | 'salary_component';
   @ValidateIf(
     (o) =>
@@ -32,10 +34,15 @@ export class CreateSalaryComponentDto {
   )
   @IsMongoId()
   calculationBaseComponentId?: string | null;
-  @IsIn(['percentage', 'fixed']) calculationType!: 'percentage' | 'fixed';
+  @IsIn(['percentage', 'fixed', 'formula']) calculationType!:
+    'percentage' | 'fixed' | 'formula';
+  @ValidateIf((o) => o.calculationType !== 'formula')
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
-  calculationValue!: number;
+  calculationValue?: number | null;
+  @ValidateIf((o) => o.formula !== undefined && o.formula !== null)
+  @IsString()
+  formula?: string | null;
   @ValidateIf(
     (o) => o.fixedAmountPeriod !== undefined && o.fixedAmountPeriod !== null,
   )
@@ -55,4 +62,3 @@ export class UpdateSalaryComponentDto extends PartialType(
 export class SalaryComponentStatusDto {
   @IsIn(['active', 'inactive']) status!: 'active' | 'inactive';
 }
-

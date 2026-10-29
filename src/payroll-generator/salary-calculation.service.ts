@@ -9,7 +9,8 @@ export interface CalculationComponent {
   calculationBaseType:
     'annual_ctc' | 'gross_wages' | 'core_wages' | 'salary_component';
   calculationBaseComponentId?: { toString(): string } | null;
-  calculationType: 'percentage' | 'fixed';
+  calculationType: 'percentage' | 'fixed' | 'formula';
+  formula?: string | null;
   calculationValue: number | null;
   fixedAmountPeriod?: 'annual' | 'monthly' | null;
   showInPayslip: boolean;
