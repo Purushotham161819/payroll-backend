@@ -5,7 +5,7 @@ import { isEmail } from 'class-validator';
 import { User, UserSchema } from './auth.schema';
 import { ensureUserIndexes, withAccountLock } from './account-storage';
 
-export async function runAdminCommand(recover = false) {
+export async function runAdminCommand(recover = false, role: 'admin' | 'super_admin' = 'admin') {
   const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
   delete process.env.BOOTSTRAP_ADMIN_PASSWORD;
@@ -34,29 +34,30 @@ export async function runAdminCommand(recover = false) {
       });
       if (recover) {
         const admin = await users
-          .findOne({ email, role: 'admin' })
+          .findOne({ email, role })
           .select('+sessionVersion');
         if (!admin)
           throw new Error('Recovery requires an existing administrator');
         admin.passwordHash = passwordHash;
         admin.active = true;
+        admin.mustChangePassword = false;
         admin.sessionVersion = (admin.sessionVersion ?? 0) + 1;
         await admin.save();
       } else {
-        if (await users.exists({ role: 'admin' }))
+        if (await users.exists({ role }))
           throw new Error('An administrator already exists');
         await users.create({
           email,
           passwordHash,
           active: true,
-          role: 'admin',
+          role,
         });
       }
     });
     console.log(
       recover
         ? 'Administrator recovered; previous sessions invalidated'
-        : 'Administrator created',
+        : role === 'super_admin' ? 'Super Admin created' : 'Administrator created',
     );
   } catch {
     console.error(

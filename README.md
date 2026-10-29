@@ -127,6 +127,11 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 - Website - [https://nestjs.com](https://nestjs.com/)
 - Twitter - [@nestframework](https://twitter.com/nestframework)
 
+## Super Admin portal
+
+See [SUPER-ADMIN.md](SUPER-ADMIN.md) for first-account setup, customer onboarding,
+organization isolation, password resets and the existing local account-lock blocker.
+
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

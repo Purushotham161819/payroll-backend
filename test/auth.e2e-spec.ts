@@ -13,6 +13,7 @@ import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { User } from '../src/auth/auth.schema';
 import { configureSecurity } from '../src/auth/http-security';
 import { ModulesContainer } from '@nestjs/core';
+import { PlatformController } from '../src/organizations/platform.controller';
 import { AuthController } from '../src/auth/auth.controller';
 
 describe('Authentication and complete route audit (isolated Mongo database)', () => {
@@ -189,11 +190,12 @@ describe('Authentication and complete route audit (isolated Mongo database)', ()
               .set(headers)
               .set('Cookie', cookie)
               .send({});
-            expect([401, 403, 500]).not.toContain(result.status);
+            if (controller === PlatformController) expect(result.status).toBe(403);
+            else expect([401, 403, 500]).not.toContain(result.status);
           }
         }
       }
-    expect(count).toBe(25);
+    expect(count).toBe(37);
   });
   it('serves only the configured organization name to authenticated requests', async () => {
     const original = process.env.ORGANIZATION_NAME;

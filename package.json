@@ -22,7 +22,9 @@
     "auth:bootstrap": "ts-node src/auth/bootstrap-admin.ts",
     "create-admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/admin.ps1 -Mode create",
     "recover-admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/admin.ps1 -Mode recover",
-    "auth:recover": "ts-node src/auth/recover-admin.ts"
+    "auth:recover": "ts-node src/auth/recover-admin.ts",
+    "create-super-admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/admin.ps1 -Mode create -Role super_admin",
+    "recover-super-admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/admin.ps1 -Mode recover -Role super_admin"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

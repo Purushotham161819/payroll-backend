@@ -3,6 +3,8 @@ const path = require('node:path');
 
 async function main() {
   const mode = process.argv[2];
+  const role = process.argv[3] ?? 'admin';
+  if (!['admin', 'super_admin'].includes(role)) { process.exitCode = 1; return; }
   if (!['create', 'recover'].includes(mode)) {
     console.error('Specify create or recover. Use npm.cmd run create-admin or npm.cmd run recover-admin.');
     process.exitCode = 1;
@@ -31,19 +33,19 @@ async function main() {
     // Read-only diagnostics. Atomic creation/recovery rules remain in the shared
     // provisioning function, which rechecks existence inside its MongoDB lock.
     const accounts = mongoose.connection.collection('authusers');
-    if (mode === 'create' && await accounts.findOne({ role: 'admin' }, { projection: { _id: 1 } })) {
-      console.error('An administrator already exists. Initial setup made no changes. If you lost access, explicitly run npm.cmd run recover-admin.');
+    if (mode === 'create' && await accounts.findOne({ role }, { projection: { _id: 1 } })) {
+      console.error('An administrator already exists. Initial setup made no changes. If you lost access, explicitly run npm.cmd run recover-admin (or npm.cmd run recover-super-admin for the platform account).');
       process.exitCode = 1;
       return;
     }
-    if (mode === 'recover' && !await accounts.findOne({ email, role: 'admin' }, { projection: { _id: 1 } })) {
+    if (mode === 'recover' && !await accounts.findOne({ email, role }, { projection: { _id: 1 } })) {
       console.error('Recovery requires the email of an existing administrator. No account was changed. Use create-admin only if no administrator exists.');
       process.exitCode = 1;
       return;
     }
     phase = 'operation';
     const { runAdminCommand } = require('../src/auth/admin-provisioning');
-    await runAdminCommand(mode === 'recover');
+    await runAdminCommand(mode === 'recover', role);
     if (process.exitCode) console.error('Check for a duplicate email or an account operation already in progress. Retry after it finishes; setup never falls back to recovery.');
   } catch {
     console.error(phase === 'configuration'

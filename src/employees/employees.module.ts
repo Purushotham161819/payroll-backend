@@ -1,5 +1,5 @@
 import { EmployeeIdentifierService } from './employee-identifier.service';
-import { MongooseModule } from '@nestjs/mongoose';
+import { BusinessModelsModule } from '../organizations/business-models.module';
 import { Employee, EmployeeSchema } from './schemas/employee.schema';
 import { Module } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
@@ -8,7 +8,7 @@ import { EmployeeEmailIndexService } from './employee-email-index.service';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
+    BusinessModelsModule.forFeature([
       { name: Employee.name, schema: EmployeeSchema },
     ]),
   ],

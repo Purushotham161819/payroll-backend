@@ -10,6 +10,7 @@ import {
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import type { Request, Response } from 'express';
+import { ChangePasswordDto } from './users.dto';
 import { AuthService } from './auth.service';
 
 export class LoginDto {
@@ -38,7 +39,13 @@ export class AuthController {
     await new Promise<void>((resolve, reject) =>
       req.session.save((err) => (err ? reject(err) : resolve())),
     );
-    return { id: user.id, email: user.email, role: user.role };
+    const { sessionVersion: _version, ...identity } = user;
+    return identity;
+  }
+  @Post('change-password')
+  @HttpCode(200)
+  changePassword(@Body() dto: ChangePasswordDto, @Req() req: Request) {
+    return this.auth.changePassword(req.session.userId!, req.session.sessionVersion ?? 0, dto.currentPassword, dto.password);
   }
   @Get('me')
   me(@Req() req: Request) {

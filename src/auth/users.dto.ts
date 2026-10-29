@@ -27,3 +27,7 @@ export class PasswordDto {
 export class UserStatusDto {
   @IsBoolean() active: boolean;
 }
+
+export class ChangePasswordDto extends PasswordDto {
+  @IsString() @MinLength(8) @MaxLength(128) currentPassword: string;
+}

@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { Employee } from './schemas/employee.schema';
 @Injectable()
 export class EmployeeIdentifierService implements OnModuleInit {
-  private ready?: Promise<void>;
+  private readonly ready = new Map<string, Promise<void>>();
   constructor(
     @InjectModel(Employee.name) private readonly employees: Model<Employee>,
   ) {}
@@ -12,7 +12,16 @@ export class EmployeeIdentifierService implements OnModuleInit {
     return this.initialize();
   }
   initialize() {
-    return (this.ready ??= this.prepare());
+    const key = this.employees.collection.collectionName;
+    let ready = this.ready.get(key);
+    if (!ready) {
+      ready = this.prepare().catch((error) => {
+        this.ready.delete(key);
+        throw error;
+      });
+      this.ready.set(key, ready);
+    }
+    return ready;
   }
   private get counter() {
     return this.employees.db.collection<{ _id: string; value: number }>(

@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { PlatformController } from '../organizations/platform.controller';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersController } from './users.controller';
@@ -38,6 +39,22 @@ export class AuthGuard implements CanActivate {
         req.session.userId,
         req.session.sessionVersion ?? 0,
       );
+      (req as Request & { account: typeof user }).account = user;
+      const platform = context.getClass() === PlatformController;
+      if (platform && user.role !== 'super_admin')
+        throw new ForbiddenException('Super Admin access required');
+      if (
+        !platform &&
+        context.getClass() !== AuthController &&
+        user.role === 'super_admin'
+      )
+        throw new ForbiddenException(
+          'Super Admin accounts cannot access customer business data',
+        );
+      if (user.mustChangePassword && context.getClass() !== AuthController)
+        throw new ForbiddenException(
+          'Change your temporary password before continuing',
+        );
       if (context.getClass() === UsersController && user.role !== 'admin')
         throw new ForbiddenException('Administrator access required');
     }

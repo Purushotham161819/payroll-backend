@@ -6,6 +6,8 @@ export interface User {
   active: boolean;
   role: string;
   sessionVersion: number;
+  organizationId?: string;
+  mustChangePassword?: boolean;
 }
 export const UserSchema = new Schema<User>(
   {
@@ -18,7 +20,9 @@ export const UserSchema = new Schema<User>(
     },
     passwordHash: { type: String, required: true, select: false },
     active: { type: Boolean, default: true },
-    role: { type: String, enum: ['admin', 'user'], default: 'user' },
+    role: { type: String, enum: ['admin', 'user', 'super_admin'], default: 'user' },
+    organizationId: { type: String, immutable: true, index: true },
+    mustChangePassword: { type: Boolean, default: false },
     sessionVersion: { type: Number, default: 0, select: false },
   },
   { timestamps: true },

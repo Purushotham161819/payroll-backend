@@ -36,11 +36,13 @@ export class UsersService implements OnModuleInit {
       (actor.sessionVersion ?? 0) !== version
     )
       throw new ForbiddenException('Administrator access required');
+    if (actor.mustChangePassword) throw new ForbiddenException('Change your temporary password before continuing');
+    if (actor.organizationId && !await this.users.db.collection('organizations').findOne({ organizationId: actor.organizationId, status: 'active' })) throw new ForbiddenException('Organization access is unavailable');
     return actor;
   }
   async list(actorId: string, version: number) {
-    await this.requireAdmin(actorId, version);
-    return (await this.users.find().sort({ createdAt: 1 })).map(publicUser);
+    const actor = await this.requireAdmin(actorId, version);
+    return (await this.users.find({ organizationId: actor.organizationId ?? null, role: { $in: ['admin', 'user'] } }).sort({ createdAt: 1 })).map(publicUser);
   }
   private async write<T>(
     actorId: string,
@@ -60,10 +62,11 @@ export class UsersService implements OnModuleInit {
       }
     });
   }
-  private async target(id: string) {
+  private async target(id: string, actorId: string, version: number) {
     if (!isValidObjectId(id) || !/^[a-f\d]{24}$/i.test(id))
       throw new BadRequestException('Invalid user ID');
-    const user = await this.users.findById(id).select('+sessionVersion');
+    const actor = await this.requireAdmin(actorId, version);
+    const user = await this.users.findOne({ _id: id, organizationId: actor.organizationId ?? null, role: { $in: ['admin', 'user'] } }).select('+sessionVersion');
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -71,6 +74,7 @@ export class UsersService implements OnModuleInit {
     return this.write(actorId, version, async () =>
       publicUser(
         await this.users.create({
+          organizationId: (await this.requireAdmin(actorId, version)).organizationId,
           email: dto.email,
           role: dto.role,
           active: dto.active,
@@ -90,7 +94,7 @@ export class UsersService implements OnModuleInit {
     dto: UserDetailsDto,
   ) {
     return this.write(actorId, version, async () => {
-      const user = await this.target(id);
+      const user = await this.target(id, actorId, version);
       if (actorId === user.id && dto.role !== 'admin')
         throw new ConflictException(
           'You cannot remove your own administrator access',
@@ -98,7 +102,7 @@ export class UsersService implements OnModuleInit {
       if (
         user.role === 'admin' &&
         dto.role !== 'admin' &&
-        (await this.users.countDocuments({ role: 'admin', active: true })) <=
+        (await this.users.countDocuments({ role: 'admin', active: true, organizationId: user.organizationId ?? null })) <=
           1 &&
         user.active
       )
@@ -115,7 +119,7 @@ export class UsersService implements OnModuleInit {
   }
   async status(actorId: string, version: number, id: string, active: boolean) {
     return this.write(actorId, version, async () => {
-      const user = await this.target(id);
+      const user = await this.target(id, actorId, version);
       if (!active && actorId === user.id)
         throw new ConflictException('You cannot deactivate your own account');
       if (
@@ -141,7 +145,7 @@ export class UsersService implements OnModuleInit {
     password: string,
   ) {
     return this.write(actorId, version, async () => {
-      const user = await this.target(id);
+      const user = await this.target(id, actorId, version);
       user.passwordHash = await argon2.hash(password, {
         type: argon2.argon2id,
         memoryCost: 65536,

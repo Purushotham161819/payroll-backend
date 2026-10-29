@@ -1,6 +1,6 @@
 import { StatutoryDeductionsModule } from '../statutory-deductions/statutory-deductions.module';
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { BusinessModelsModule } from '../organizations/business-models.module';
 import {
   SalaryComponent,
   SalaryComponentSchema,
@@ -11,7 +11,7 @@ import { SalaryComponentsService } from './salary-components.service';
 @Module({
   imports: [
     StatutoryDeductionsModule,
-    MongooseModule.forFeature([
+    BusinessModelsModule.forFeature([
       { name: SalaryComponent.name, schema: SalaryComponentSchema },
     ]),
   ],

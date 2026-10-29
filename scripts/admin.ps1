@@ -1,4 +1,4 @@
-param([ValidateSet('create', 'recover')][string]$Mode = 'create', [switch]$UseEnvironment)
+param([ValidateSet('create', 'recover')][string]$Mode = 'create', [switch]$UseEnvironment, [ValidateSet('admin', 'super_admin')][string]$Role = 'admin')
 $ErrorActionPreference = 'Stop'
 $previousEmail = $env:BOOTSTRAP_ADMIN_EMAIL
 $previousPassword = $env:BOOTSTRAP_ADMIN_PASSWORD
@@ -10,7 +10,7 @@ $backendRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $backendRoot
 try {
   if (-not $UseEnvironment) {
-  $env:BOOTSTRAP_ADMIN_EMAIL = Read-Host 'Administrator email'
+  $env:BOOTSTRAP_ADMIN_EMAIL = Read-Host "$Role email"
   $passwordInput = Read-Host 'Password (8-128 characters)' -AsSecureString
   $confirmationInput = Read-Host 'Confirm password' -AsSecureString
   $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordInput)
@@ -21,7 +21,7 @@ try {
   }
   }
   # Invoke this repository's standalone CLI directly, never an npm start script.
-  & node (Join-Path $PSScriptRoot 'admin-cli.cjs') $Mode
+  & node (Join-Path $PSScriptRoot 'admin-cli.cjs') $Mode $Role
   $commandExitCode = $LASTEXITCODE
 } finally {
   if ($passwordPointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer) }
