@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -12,16 +13,20 @@ import * as argon2 from 'argon2';
 import { User } from './auth.schema';
 import { CreateUserDto, UserDetailsDto } from './users.dto';
 import {
-  ensureUserIndexes,
+  initializeUserIndexes,
   publicUser,
   withAccountLock,
 } from './account-storage';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
   constructor(@InjectModel('AuthUser') private readonly users: Model<User>) {}
   async onModuleInit() {
-    await withAccountLock(this.users, () => ensureUserIndexes(this.users));
+    await initializeUserIndexes(this.users);
+    if (await this.users.db.collection<{ _id: string }>('auth_management_locks').findOne({ _id: 'accounts' }, { projection: { _id: 1 } })) {
+      this.logger.warn('User indexes are ready; startup can continue while an account-operation lock exists. Account writes remain protected. Let an active operation finish; if the lock is abandoned, use the documented operator recovery procedure after verifying all writers are stopped. No lock was removed.');
+    }
   }
   async requireAdmin(id: string, version: number) {
     const actor = await this.users.findById(id).select('+sessionVersion');

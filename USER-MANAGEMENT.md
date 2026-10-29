@@ -98,7 +98,10 @@ checks preserve an active administrator even when two administrators attempt to
 disable or demote one another simultaneously. No replica set is required.
 
 **Operator limitation:** a crashed writer can leave a lock in
-`auth_management_locks`, blocking account writes or startup. There is deliberately
+`auth_management_locks`, blocking account writes. Completed index initialization
+is now a read-only startup check, so an existing lock alone does not prevent
+startup, login or reads. A pending index migration still waits briefly for the
+write lock and fails clearly if it cannot complete. There is deliberately
 no expiring lease that could let two writers proceed concurrently. Stop **all**
 backend instances and provisioning commands, inspect the correct database, then
 remove only the lock record `_id: 'accounts'` with an authenticated database tool.

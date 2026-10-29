@@ -156,6 +156,8 @@ describe('Administrator provisioning, authorization and user management', () => 
   it('denies ordinary users every management endpoint, including self-promotion', async () => {
     userCookie = await login(email);
     await member().get('/employees').expect(200);
+    await member().get('/settings/organization').expect(200);
+    await member().patch('/settings/organization').send({displayName:'Unauthorized change'}).expect(404);
     await member().get('/users').expect(403);
     await member()
       .post('/users')

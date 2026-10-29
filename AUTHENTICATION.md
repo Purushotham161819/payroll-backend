@@ -120,7 +120,11 @@ deactivations/demotions from removing all administrator access.
 
 The lock deliberately has no automatic lease expiry: an expired lease must not
 allow a paused writer to continue alongside another writer. A crashed writer can
-leave the application refusing account operations or startup. To recover:
+leave account writes blocked. Normal startup now checks completed user indexes
+without acquiring the account write lock, so login and reads remain available.
+Only a pending index migration requires that lock; startup briefly waits for a
+concurrent initializer and fails clearly if indexes remain incomplete. Startup
+never removes an existing lock. To recover a verified abandoned lock:
 
 1. Stop **all** backend instances and provisioning/recovery commands.
 2. In an authenticated MongoDB administration tool, select the application's

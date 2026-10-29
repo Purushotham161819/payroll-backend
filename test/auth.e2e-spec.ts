@@ -193,7 +193,18 @@ describe('Authentication and complete route audit (isolated Mongo database)', ()
           }
         }
       }
-    expect(count).toBe(24);
+    expect(count).toBe(25);
+  });
+  it('serves only the configured organization name to authenticated requests', async () => {
+    const original = process.env.ORGANIZATION_NAME;
+    try {
+      process.env.ORGANIZATION_NAME = '  Customer Organization with Regional Operations  ';
+      await request(app.getHttpServer()).get('/settings/organization').expect(401);
+      const response = await request(app.getHttpServer()).get('/settings/organization').set('Cookie', cookie).expect(200);
+      expect(response.body).toEqual({displayName:'Customer Organization with Regional Operations'});
+      process.env.ORGANIZATION_NAME = 'Changed Customer';
+      expect((await request(app.getHttpServer()).get('/settings/organization').set('Cookie', cookie).expect(200)).body.displayName).toBe('Changed Customer');
+    } finally { if (original === undefined) delete process.env.ORGANIZATION_NAME; else process.env.ORGANIZATION_NAME = original; }
   });
   it('rejects CSRF, invalid cookies and deactivated accounts', async () => {
     await request(app.getHttpServer())
