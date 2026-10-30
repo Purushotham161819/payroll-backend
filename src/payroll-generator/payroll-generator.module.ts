@@ -5,10 +5,11 @@ import { SalaryComponentsModule } from '../salary-components/salary-components.m
 import { StatutoryDeductionsModule } from '../statutory-deductions/statutory-deductions.module';
 import { PayrollGeneratorController } from './payroll-generator.controller';
 import { PayrollGeneratorService } from './payroll-generator.service';
-import { SalaryCalculationService } from './salary-calculation.service';
+import { PayrollCalculationModule } from './payroll-calculation.module';
 
 @Module({
   imports: [
+    PayrollCalculationModule,
     SalaryComponentsModule,
     StatutoryDeductionsModule,
     BusinessModelsModule.forFeature([
@@ -16,6 +17,6 @@ import { SalaryCalculationService } from './salary-calculation.service';
     ]),
   ],
   controllers: [PayrollGeneratorController],
-  providers: [PayrollGeneratorService, SalaryCalculationService],
+  providers: [PayrollGeneratorService],
 })
 export class PayrollGeneratorModule {}

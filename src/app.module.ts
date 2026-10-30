@@ -7,6 +7,7 @@ import { SalaryComponentsModule } from './salary-components/salary-components.mo
 import { StatutoryDeductionsModule } from './statutory-deductions/statutory-deductions.module';
 
 import { PayrollGeneratorModule } from './payroll-generator/payroll-generator.module';
+import { RunPayrollModule } from './run-payroll/run-payroll.module';
 import { AuthModule } from './auth/auth.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { AuthModule } from './auth/auth.module';
     EmployeesModule,
     SalaryComponentsModule,
     PayrollGeneratorModule,
+    RunPayrollModule,
     StatutoryDeductionsModule,
   ],
   controllers: [AppController],
