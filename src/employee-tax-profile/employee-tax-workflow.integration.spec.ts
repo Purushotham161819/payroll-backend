@@ -350,6 +350,59 @@ integration('Employee TDS profile explicit editing workflow', () => {
     expect(await db.model('EmployeeTdsCalculation').countDocuments()).toBe(1);
     expect(await runs.pdf(period, id)).toEqual(firstPdf);
   });
+  it('reports persisted eligibility failures over HTTP and calculates after a saved correction', async () => {
+    const employee = await db.model('Employee').create({
+      firstName: 'Eligibility',
+      lastName: 'QA',
+      email: 'eligibility@example.test',
+      dateOfBirth: '1990-01-01',
+      hireDate: `${year}-10-06`,
+      annualCtc: 1440000,
+      payFrequency: 'Monthly',
+    });
+    const url = `/employees/${employee._id}/income-tax/${code}`;
+    await request(app.getHttpServer())
+      .put(url)
+      .send({ ...facts, exemptionConditionsConfirmed: true })
+      .expect(200);
+    const failure = await request(app.getHttpServer())
+      .post(url + '/calculate')
+      .send({ resident: true, fullYearEmployment: true })
+      .expect(400);
+    expect(failure.body.message).toContain(`hire date ${year}-10-06`);
+    expect(failure.body.message).toContain(`start ${year}-01-01`);
+    expect(
+      (await request(app.getHttpServer()).get(url).expect(200)).body
+        .calculationStatus,
+    ).toBe('not_calculated');
+    // Correct the fixture's recorded employment facts; never alter production employees.
+    await db.model('Employee').updateOne(
+      { _id: employee._id },
+      {
+        $set: { hireDate: `${year - 1}-01-01` },
+      },
+    );
+    const saved = (await request(app.getHttpServer()).get(url).expect(200)).body
+      .profile;
+    expect(saved.resident).toBe(true);
+    expect(saved.fullYearEmployment).toBe(true);
+    expect(saved.exemptionConditionsConfirmed).toBe(true);
+    await request(app.getHttpServer())
+      .post(url + '/calculate')
+      .send({ resident: false })
+      .expect(201);
+    const summary = (await request(app.getHttpServer()).get(url).expect(200))
+      .body;
+    expect(summary.calculationStatus).toBe('calculated');
+    expect(
+      summary.latest.snapshot.result.taxableComponents.length,
+    ).toBeGreaterThan(0);
+    expect(
+      await db
+        .model('EmployeeTdsCalculation')
+        .countDocuments({ employeeId: String(employee._id) }),
+    ).toBe(1);
+  });
   it('rejects ambiguous new profiles and preserves the existing configured regime when both are published', async () => {
     let state = await tax.get();
     state = await tax.saveRevision(

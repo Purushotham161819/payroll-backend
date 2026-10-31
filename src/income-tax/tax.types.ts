@@ -52,6 +52,7 @@ export interface TaxRevision {
   createdAt: string;
 }
 export interface AnnualSalaryInput {
+  previousEmployer?: { grossWages: number; exemptWages: number };
   annual: Record<string, number>;
   components: {
     componentId: string;

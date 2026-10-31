@@ -214,7 +214,21 @@ export function calculateAnnualTax(
         legalReference: m.legalReference,
       };
     });
-  const gross = R.of(salary.annual.annualGrossWages);
+  const previous = salary.previousEmployer ?? { grossWages: 0, exemptWages: 0 };
+  amount(previous.grossWages, 'Previous employer gross wages');
+  amount(previous.exemptWages, 'Previous employer exempt wages');
+  if (previous.exemptWages > previous.grossWages)
+    fail('Previous employer exempt wages cannot exceed gross wages.');
+  // Previous wages are not run through current-employer component mappings.
+  // Verified exemptions are applied once, and the common standard deduction
+  // below applies once to the combined salary.
+  const currentGross = R.of(salary.annual.annualGrossWages);
+  if (exemptions.sub(currentGross).n > 0n)
+    fail(
+      'Exemptions exceed existing Gross Wages; review overlapping components.',
+    );
+  const gross = currentGross.add(R.of(previous.grossWages));
+  exemptions = exemptions.add(R.of(previous.exemptWages));
   if (exemptions.sub(gross).n > 0n)
     fail(
       'Exemptions exceed existing Gross Wages; review overlapping components.',
@@ -255,6 +269,9 @@ export function calculateAnnualTax(
   return {
     annualCtc: salary.annual.annualCtc,
     annualGrossWages: gross.money(),
+    currentEmployerGrossWages: currentGross.money(),
+    previousEmployerGrossWages: previous.grossWages,
+    previousEmployerExemptWages: previous.exemptWages,
     taxableComponents,
     residualTaxableGross: gross
       .sub(
@@ -285,16 +302,49 @@ export function calculateAnnualTax(
   };
 }
 export function allocateMonthly(annualTds: number, frequency = 'Monthly') {
-  amount(annualTds);
   if (frequency !== 'Monthly')
     fail('Only monthly allocation is supported in Version 1.0.');
+  return allocatePeriods(
+    annualTds,
+    Array.from({ length: 12 }, (_, i) => i),
+  );
+}
+
+// Keep a financial-year indexed allocation, including zero for ineligible or
+// already submitted periods. The last eligible check receives the remainder.
+export function allocatePeriods(annualTds: number, eligibleMonths: number[]) {
+  amount(annualTds);
+  if (
+    eligibleMonths.some(
+      (m, i) =>
+        !Number.isInteger(m) ||
+        m < 0 ||
+        m > 11 ||
+        (i > 0 && m <= eligibleMonths[i - 1]),
+    )
+  )
+    fail(
+      'Eligible payroll months must be unique, ordered financial-year month indexes.',
+    );
+  if (!eligibleMonths.length) {
+    if (annualTds > 0)
+      fail('No eligible payroll periods remain for TDS allocation.');
+    return Array<number>(12).fill(0);
+  }
   const value = R.of(annualTds).mul(R.of(100));
   if (value.n % value.d !== 0n)
     fail('Annual TDS must have at most two decimal places.');
   const cents = value.n / value.d,
-    regular = cents / 12n;
-  return Array.from(
-    { length: 12 },
-    (_, i) => Number(i === 11 ? cents - regular * 11n : regular) / 100,
-  );
+    count = BigInt(eligibleMonths.length),
+    regular = cents / count;
+  const allocation = Array<number>(12).fill(0);
+  eligibleMonths.forEach((month, i) => {
+    allocation[month] =
+      Number(
+        i === eligibleMonths.length - 1
+          ? cents - regular * (count - 1n)
+          : regular,
+      ) / 100;
+  });
+  return allocation;
 }

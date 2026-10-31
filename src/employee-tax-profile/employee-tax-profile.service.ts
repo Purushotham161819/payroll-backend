@@ -16,6 +16,7 @@ import {
 import type { TaxYear } from '../income-tax/tax.types';
 import { TaxWriteLock } from '../tax-configuration/tax-write-lock.service';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { employmentScenario } from '../income-tax/employment-scenario';
 
 const ProfileSchema = new Schema(
   {
@@ -30,6 +31,14 @@ const ProfileSchema = new Schema(
     panOperative: Boolean,
     fullYearEmployment: Boolean,
     exemptionConditionsConfirmed: Boolean,
+    employmentScenario: {
+      type: String,
+      enum: ['first_job', 'job_change', null],
+    },
+    previousEmployerGrossWages: Number,
+    previousEmployerExemptWages: Number,
+    previousEmployerTds: Number,
+    previousEmployerExemptionsVerified: Boolean,
     reason: String,
     audit: [Schema.Types.Mixed],
   },
@@ -312,6 +321,7 @@ export class EmployeeTaxProfileService {
     )
       throw new ConflictException('Tax profile changed. Reload and retry.');
     const values = {
+      ...employmentScenario(body),
       regime: selection.regime,
       tdsApplicable: body.tdsApplicable,
       ...Object.fromEntries(fields.map((f) => [f, body[f]])),

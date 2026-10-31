@@ -17,7 +17,9 @@ import { SalaryComponentsService } from '../salary-components/salary-components.
 import { StatutoryDeductionsService } from '../statutory-deductions/statutory-deductions.service';
 import { SalaryCalculationService } from '../payroll-generator/salary-calculation.service';
 import { PayrollRunSchema } from '../run-payroll/schemas/payroll-run.schema';
-import { calculateAnnualTax } from './tax-engine';
+import { allocatePeriods, calculateAnnualTax } from './tax-engine';
+import { employmentPeriod } from './employment-period';
+import { employmentScenario } from './employment-scenario';
 import type { AnnualSalaryInput, TaxRevision, TaxYear } from './tax.types';
 import { Ratio } from '../payroll-generator/decimal-ratio';
 import { TaxWriteLock } from '../tax-configuration/tax-write-lock.service';
@@ -126,6 +128,9 @@ export class IncomeTaxService {
       );
   }
   async project(id: string, yearCode: string, actor = 'payroll') {
+    return this.lock.run(() => this.projectLocked(id, yearCode, actor));
+  }
+  private async projectLocked(id: string, yearCode: string, actor: string) {
     const employee = await this.profiles.employee(id);
     const profile: any = await this.profiles.get(id, yearCode);
     if (!profile)
@@ -151,25 +156,45 @@ export class IncomeTaxService {
       throw new BadRequestException(
         'Publish reviewed rules for the selected year and regime.',
       );
-    if (
-      !profile.resident ||
-      !profile.salaryOnly ||
-      !profile.panOperative ||
-      !profile.fullYearEmployment ||
-      (employee.payFrequency ?? 'Monthly') !== 'Monthly' ||
-      new Date(employee.rehireDate ?? employee.hireDate) >
-        new Date(year.startDate)
+    const eligibilityErrors: string[] = [];
+    for (const [field, message] of [
+      ['resident', 'Indian tax residency confirmation is missing.'],
+      ['salaryOnly', 'Salary-only income is not confirmed.'],
+      ['panOperative', 'PAN operative and verified confirmation is missing.'],
+    ]) {
+      if (profile[field] !== true) eligibilityErrors.push(message);
+    }
+    const frequency = employee.payFrequency ?? 'Monthly';
+    if (frequency.trim().toLowerCase() !== 'monthly')
+      eligibilityErrors.push(
+        `Payroll frequency "${frequency}" is unsupported. Version 1 requires Monthly payroll.`,
+      );
+    const scenario = employmentScenario(profile);
+    const employmentStart = new Date(employee.rehireDate ?? employee.hireDate);
+    if (!Number.isFinite(employmentStart.getTime()))
+      eligibilityErrors.push(
+        'A valid employee hire or rehire date is required.',
+      );
+    else if (
+      !scenario.employmentScenario &&
+      employmentStart > new Date(year.startDate)
     )
-      throw new BadRequestException(
-        'Version 1 supports confirmed resident, salary-only, operative-PAN, full-year monthly employment. Review unsupported cases before payroll.',
+      eligibilityErrors.push(
+        `Select First job or Job change and save the tax profile: employee ${employee.rehireDate ? 'rehire' : 'hire'} date ${employmentStart.toISOString().slice(0, 10)} is after financial year ${year.code} start ${year.startDate}.`,
+      );
+    if (!scenario.employmentScenario && profile.fullYearEmployment !== true)
+      eligibilityErrors.push(
+        'Full-year employment is not confirmed. Select an employment scenario for a new projection.',
       );
     if (
       revision.rules.mappings.some((m) => m.type !== 'taxable') &&
       !profile.exemptionConditionsConfirmed
     )
-      throw new BadRequestException(
+      eligibilityErrors.push(
         'Confirm documented exemption conditions for this employee.',
       );
+    if (eligibilityErrors.length)
+      throw new BadRequestException(eligibilityErrors.join(' '));
     const dob = new Date(employee.dateOfBirth),
       end = new Date(year.endDate);
     const age =
@@ -199,7 +224,68 @@ export class IncomeTaxService {
       components,
       settings,
     );
-    return this.persist(id, year, revision, profile, salary, actor);
+    const projection = await this.projection(employee, profile, year, salary);
+    const submitted = await this.submitted(id, year);
+    const period = employmentPeriod(
+      employee,
+      year,
+      submitted.map((s) => s.period),
+    );
+    const submittedTds = submitted
+      .reduce((sum, s) => sum.add(Ratio.of(s.tax?.amount ?? 0)), Ratio.of(0))
+      .money();
+    return this.persist(
+      id,
+      year,
+      revision,
+      profile,
+      salary,
+      actor,
+      projection,
+      {
+        remainingMonths: period.remainingMonths,
+        submittedTds,
+        submittedPeriods: [...new Set(submitted.map((s) => s.period))].sort(),
+      },
+    );
+  }
+  private async projection(
+    employee: any,
+    profile: any,
+    year: TaxYear,
+    fullSalary: AnnualSalaryInput,
+  ) {
+    const scenario = employmentScenario(profile);
+    const period = employmentPeriod(employee, year);
+    const [components, settings] = await Promise.all([
+      this.components.findAll(),
+      this.statutory.get(),
+    ]);
+    if (!settings)
+      throw new BadRequestException('Configure statutory deductions first.');
+    const salary: AnnualSalaryInput = scenario.employmentScenario
+      ? this.salary.calculateProjection(
+          employee.annualCtc,
+          components,
+          settings,
+          period.eligibleMonthCount,
+        )
+      : fullSalary;
+    return {
+      ...scenario,
+      ...period,
+      annualCtc: employee.annualCtc,
+      payrollFrequency: employee.payFrequency ?? 'Monthly',
+      dateOfBirth: new Date(employee.dateOfBirth).toISOString(),
+      fullSalary,
+      salary: {
+        ...salary,
+        previousEmployer: {
+          grossWages: scenario.previousEmployerGrossWages,
+          exemptWages: scenario.previousEmployerExemptWages,
+        },
+      },
+    };
   }
   private async persist(
     id: string,
@@ -208,10 +294,63 @@ export class IncomeTaxService {
     profile: any,
     salary: AnnualSalaryInput,
     actor: string,
+    projection: Awaited<ReturnType<IncomeTaxService['projection']>>,
+    settlement: {
+      remainingMonths: number[];
+      submittedTds: number;
+      submittedPeriods: string[];
+    },
   ) {
-    const inputs = { year, revision, profileVersion: profile.version, salary };
+    const inputs = {
+      year,
+      revision,
+      profileVersion: profile.version,
+      salary,
+      projection,
+      settlement,
+    };
     const inputHash = digest(inputs);
-    const result = calculateAnnualTax(salary, revision.rules);
+    const annual = calculateAnnualTax(projection.salary, revision.rules);
+    const credit = Ratio.of(projection.previousEmployerTds).add(
+      Ratio.of(settlement.submittedTds),
+    );
+    const balance = Ratio.of(annual.annualEstimatedTax).sub(credit).money();
+    const remainingAnnualTds = Math.max(0, balance);
+    const allocation = allocatePeriods(
+      remainingAnnualTds,
+      settlement.remainingMonths,
+    );
+    const result = {
+      ...annual,
+      annualTds: Math.max(
+        0,
+        Ratio.of(annual.annualEstimatedTax)
+          .sub(Ratio.of(projection.previousEmployerTds))
+          .money(),
+      ),
+      remainingAnnualTds,
+      previousEmployerTdsCredit: projection.previousEmployerTds,
+      currentEmployerSubmittedTds: settlement.submittedTds,
+      excessTaxCredit: Math.max(0, -balance),
+      remainingPayrollPeriods: settlement.remainingMonths.length,
+      monthlyTds: allocation[settlement.remainingMonths[0]] ?? 0,
+      allocation,
+      allocationRule:
+        'Remaining liability after previous-employer TDS and submitted current-employer TDS; eligible unsubmitted monthly checks only; final eligible check receives the paise remainder.',
+      warnings: [
+        ...(balance < 0
+          ? [
+              'Tax credits exceed estimated annual liability. Review excess credit; no refund or negative payroll deduction is created.',
+            ]
+          : []),
+        ...(projection.previousEmployerTds >
+        projection.previousEmployerGrossWages
+          ? [
+              'Previous-employer TDS exceeds previous gross wages. Review employee-provided figures.',
+            ]
+          : []),
+      ],
+    };
     const snapshot = {
       status: 'calculated',
       employeeId: id,
@@ -288,10 +427,28 @@ export class IncomeTaxService {
       (r: TaxRevision) =>
         r.id === state.published[`${year.code}:${profile.regime}`],
     );
-    const currentHash =
-      revision && salary
-        ? digest({ year, revision, profileVersion: profile.version, salary })
-        : null;
+    let currentHash: string | null = null;
+    if (revision && salary) {
+      try {
+        const employee = await this.profiles.employee(id);
+        const projection = await this.projection(
+          employee,
+          profile,
+          year,
+          salary,
+        );
+        currentHash = digest({
+          year,
+          revision,
+          profileVersion: profile.version,
+          salary,
+          projection,
+          settlement: record.snapshot.inputs.settlement,
+        });
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) throw error;
+      }
+    }
     if (
       !year.active ||
       record.snapshot?.status !== 'calculated' ||
@@ -416,9 +573,12 @@ export class IncomeTaxService {
       withholdingStatus:
         'Payment Pending; submitted allocations are not confirmed withholding',
       remainingEstimatedTds: history[0]
-        ? Ratio.of(history[0].snapshot.result.annualTds)
-            .sub(Ratio.of(allocated))
-            .money()
+        ? Math.max(
+            0,
+            Ratio.of(history[0].snapshot.result.annualTds)
+              .sub(Ratio.of(allocated))
+              .money(),
+          )
         : null,
     };
   }

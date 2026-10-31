@@ -396,9 +396,12 @@ integration(
       expect(await runs.pdf(previous, blocked)).toEqual(originalPdf);
     });
     it('permits a fresh calculation after earlier zero-TDS payroll and permits explicitly disabling TDS afterwards', async () => {
-      await income.project(missing, yearCode, 'qa-admin');
+      const calculation = await income.project(missing, yearCode, 'qa-admin');
       const submitted = await finalize([missing], String(year) + '-04');
-      expect(submitted.checks[0].tds).toBe(2000);
+      // Previously submitted zero-TDS periods are excluded from the remaining
+      // allocation; the full unpaid liability is spread over ten checks.
+      expect(calculation.result.remainingPayrollPeriods).toBe(10);
+      expect(submitted.checks[0].tds).toBe(2400);
       const previous: any = await profiles.get(missing, yearCode);
       await profiles.save(
         missing,

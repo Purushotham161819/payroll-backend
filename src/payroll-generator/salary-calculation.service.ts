@@ -1,6 +1,7 @@
 import { annualPayroll, EmployerRates } from './annual-payroll';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { MANDATORY_COMPONENTS } from '../salary-components/mandatory-components';
+import { Ratio } from './decimal-ratio';
 
 export interface CalculationComponent {
   _id: { toString(): string };
@@ -20,6 +21,52 @@ export interface CalculationComponent {
 // Round each annual component to paise, then derive its rounded monthly amount.
 @Injectable()
 export class SalaryCalculationService {
+  calculateProjection(
+    annualCtc: number,
+    components: CalculationComponent[],
+    settings: EmployerRates,
+    months: number,
+  ) {
+    if (!Number.isInteger(months) || months < 1 || months > 12)
+      throw new BadRequestException(
+        'Projected employment months must be between 1 and 12.',
+      );
+    const prorate = (value: number) =>
+      Ratio.of(value).mul(Ratio.of(months)).div(Ratio.of(12)).money();
+    return this.calculateAnnual(
+      prorate(annualCtc),
+      components.map((component) => ({
+        _id: component._id,
+        code: component.code,
+        category: component.category,
+        calculationType: component.calculationType,
+        calculationBaseType: component.calculationBaseType,
+        calculationBaseComponentId: component.calculationBaseComponentId,
+        formula: component.formula,
+        fixedAmountPeriod: component.fixedAmountPeriod,
+        status: component.status,
+        showInPayslip: component.showInPayslip,
+        calculationValue:
+          component.calculationType === 'fixed' &&
+          component.calculationValue !== null
+            ? component.fixedAmountPeriod === 'monthly'
+              ? prorate(component.calculationValue * 12) / 12
+              : prorate(component.calculationValue)
+            : component.calculationValue,
+      })),
+      {
+        ...settings,
+        ...(settings.wageCap === undefined
+          ? {}
+          : { wageCap: prorate(settings.wageCap) }),
+        ...(settings.annualEsiCeilingLimit === undefined
+          ? {}
+          : {
+              annualEsiCeilingLimit: prorate(settings.annualEsiCeilingLimit),
+            }),
+      },
+    );
+  }
   calculateAnnual(
     annualCtc: number,
     components: CalculationComponent[],
