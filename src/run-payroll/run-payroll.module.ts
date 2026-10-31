@@ -7,9 +7,11 @@ import { PayrollCalculationModule } from '../payroll-generator/payroll-calculati
 import { PayrollRunSchema } from './schemas/payroll-run.schema';
 import { RunPayrollService } from './run-payroll.service';
 import { RunPayrollController } from './run-payroll.controller';
+import { IncomeTaxModule } from '../income-tax/income-tax.module';
 
 @Module({
   imports: [
+    IncomeTaxModule,
     PayrollCalculationModule,
     SalaryComponentsModule,
     StatutoryDeductionsModule,

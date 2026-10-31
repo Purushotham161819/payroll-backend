@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -16,6 +17,11 @@ import { Ratio } from '../payroll-generator/decimal-ratio';
 import { PayCheckSnapshot, PayrollRun } from './schemas/payroll-run.schema';
 import { payslipPdf } from './payslip';
 import type { RunRequest, SubmitPayrollRequest } from './run-payroll.dto';
+import {
+  IncomeTaxService,
+  tdsStatusLabel,
+} from '../income-tax/income-tax.service';
+import { applyPayrollTax } from '../income-tax/payroll-tax';
 
 export const CALCULATION_VERSION = 'annual-engine/monthly-report-v1';
 
@@ -38,6 +44,7 @@ export class RunPayrollService {
     private readonly settings: StatutoryDeductionsService,
     private readonly calculator: SalaryCalculationService,
     @InjectConnection() private readonly connection: Connection,
+    @Optional() private readonly incomeTax?: IncomeTaxService,
   ) {}
   private org() {
     return tenantContext.getStore()?.organizationId ?? 'legacy';
@@ -89,7 +96,11 @@ export class RunPayrollService {
       .lean()
       .exec();
   }
-  private async calculate(period: string, employeeIds: unknown) {
+  private async calculate(
+    period: string,
+    employeeIds: unknown,
+    reviewPreview = false,
+  ) {
     const dates = this.period(period, true);
     const ids = this.ids(employeeIds, true);
     const [employees, components, settings] = await Promise.all([
@@ -109,17 +120,6 @@ export class RunPayrollService {
       throw new BadRequestException(
         'Configure statutory deductions before running payroll.',
       );
-    for (const employee of employees) {
-      const start = employee.rehireDate ?? employee.hireDate;
-      if (
-        (employee.status ?? 'Active') !== 'Active' ||
-        new Date(start) > dates.periodEnd ||
-        (employee.payFrequency ?? 'Monthly') !== 'Monthly'
-      )
-        throw new BadRequestException(
-          `${employee.firstName} ${employee.lastName} is not eligible for this payroll month.`,
-        );
-    }
     const organizationId = this.org();
     const organization =
       organizationId === 'legacy'
@@ -133,40 +133,98 @@ export class RunPayrollService {
       organization?.name ||
       process.env.ORGANIZATION_NAME?.trim() ||
       'PayStream, An Excelhire Product';
-    const checks: PayCheckSnapshot[] = employees.map((employee) => {
-      const calculation = this.calculator.calculateAnnual(
-        employee.annualCtc,
-        components,
-        settings,
-      );
-      const a = calculation.annual as Record<string, number>;
-      return {
-        id: employee._id.toString(),
-        employeeId: employee._id.toString(),
-        employeeCode: employee.employeeId,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        grossPay: monthlyAmount(a.annualGrossWages),
-        employerContributions: sumMoney(
-          [
-            a.employerEpfContribution,
-            a.employerEpsContribution,
-            a.employerEsiContribution,
-          ].map(monthlyAmount),
-        ),
-        deductions: monthlyAmount(a.annualTotalDeductions),
-        netPay: monthlyAmount(a.annualNetPay),
-        components: calculation.components.map((c) => ({
-          name: components.find(
-            (config) => config._id.toString() === c.componentId,
-          )!.name,
-          category: c.category,
-          amount: c.monthly,
-          showInPayslip: c.showInPayslip,
-        })),
-        calculation,
-      };
-    });
+    const validationIssues: {
+      employeeId: string;
+      employeeCode?: string;
+      firstName: string;
+      lastName: string;
+      stage: string;
+      message: string;
+    }[] = [];
+    const results = await Promise.all(
+      employees.map(async (employee) => {
+        let stage = 'eligibility';
+        try {
+          const start = employee.rehireDate ?? employee.hireDate;
+          if (
+            (employee.status ?? 'Active') !== 'Active' ||
+            new Date(start) > dates.periodEnd ||
+            (employee.payFrequency ?? 'Monthly') !== 'Monthly'
+          )
+            throw new BadRequestException(
+              `${employee.firstName} ${employee.lastName} is not eligible for this payroll month.`,
+            );
+          stage = 'salary';
+          const calculation = this.calculator.calculateAnnual(
+            employee.annualCtc,
+            components,
+            settings,
+          );
+          const a = calculation.annual as Record<string, number>;
+          const check: PayCheckSnapshot = {
+            id: employee._id.toString(),
+            employeeId: employee._id.toString(),
+            employeeCode: employee.employeeId,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            grossPay: monthlyAmount(a.annualGrossWages),
+            employerContributions: sumMoney(
+              [
+                a.employerEpfContribution,
+                a.employerEpsContribution,
+                a.employerEsiContribution,
+              ].map(monthlyAmount),
+            ),
+            deductions: monthlyAmount(a.annualTotalDeductions),
+            netPay: monthlyAmount(a.annualNetPay),
+            components: calculation.components.map((c) => ({
+              name: components.find(
+                (config) => config._id.toString() === c.componentId,
+              )!.name,
+              category: c.category,
+              amount: c.monthly,
+              showInPayslip: c.showInPayslip,
+            })),
+            calculation,
+          };
+          stage = 'income_tax';
+          const assessment = await this.incomeTax?.payrollAssessment(
+            employee,
+            period,
+            calculation,
+          );
+          const status = assessment?.status ?? 'not_configured';
+          return {
+            ...applyPayrollTax(check, assessment?.tax),
+            tds: assessment?.tax?.amount ?? 0,
+            existingDeductions: check.deductions,
+            tdsCalculationStatus: status,
+            tdsCalculationStatusLabel: tdsStatusLabel(status),
+          };
+        } catch (error) {
+          if (
+            !reviewPreview ||
+            !(
+              error instanceof BadRequestException ||
+              error instanceof ConflictException
+            )
+          )
+            throw error;
+          validationIssues.push({
+            employeeId: employee._id.toString(),
+            employeeCode: employee.employeeId,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            stage,
+            message: error.message,
+          });
+          return null;
+        }
+      }),
+    );
+    const checks: PayCheckSnapshot[] = results.filter(
+      (check) => check !== null,
+    );
     const calculationInputs = {
       employees: employees.map((employee) => ({
         employeeId: employee._id.toString(),
@@ -182,6 +240,14 @@ export class RunPayrollService {
       })),
       components,
       settings,
+      ...(checks.some((c) => c.tax)
+        ? {
+            tax: checks.map((c) => ({
+              employeeId: c.employeeId,
+              tax: c.tax ?? null,
+            })),
+          }
+        : {}),
     };
     return {
       organizationId,
@@ -189,6 +255,13 @@ export class RunPayrollService {
       period,
       ...dates,
       checks,
+      ...(validationIssues.length
+        ? {
+            validationIssues: validationIssues.sort((a, b) =>
+              a.employeeId.localeCompare(b.employeeId),
+            ),
+          }
+        : {}),
       totals: {
         employerContributions: sumMoney(
           checks.map((c) => c.employerContributions),
@@ -362,7 +435,7 @@ export class RunPayrollService {
     const preview = await this.previewSnapshot(body);
     const { periodEnd } = this.period(body.period, true);
     const employees = await this.employees.find().lean().exec();
-    return {
+    const result = {
       ...preview,
       employeeCompensation: employees
         .filter(
@@ -379,6 +452,20 @@ export class RunPayrollService {
           ),
         })),
     };
+    const issues:
+      { firstName: string; lastName: string; message: string }[] | undefined =
+      preview.validationIssues;
+    if (issues?.length)
+      throw new ConflictException({
+        code: 'PAYROLL_EMPLOYEE_REVIEW_REQUIRED',
+        message: issues
+          .map(
+            (issue) => `${issue.firstName} ${issue.lastName}: ${issue.message}`,
+          )
+          .join(' '),
+        payrollPreview: result,
+      });
+    return result;
   }
   private async previewSnapshot(body: RunRequest) {
     this.period(body?.period, true);
@@ -411,7 +498,19 @@ export class RunPayrollService {
         const latest = await this.calculate(
           body.period,
           saved.checks.map((c) => c.employeeId),
+          true,
         );
+        if (latest.validationIssues?.length)
+          return this.withHistory(
+            {
+              ...latest,
+              status: 'Draft',
+              version: run!.version,
+              paymentDate: saved.paymentDate,
+            },
+            run,
+            true,
+          );
         return this.withHistory(
           { ...saved, version: run!.version },
           run,
@@ -442,7 +541,7 @@ export class RunPayrollService {
     }
     return this.withHistory(
       {
-        ...(await this.calculate(body.period, ids)),
+        ...(await this.calculate(body.period, ids, true)),
         status: 'Draft',
         version: run?.version ?? 0,
       },
@@ -524,7 +623,16 @@ export class RunPayrollService {
       throw error;
     }
   }
-  async submit(
+  async submit(period: string, body: SubmitPayrollRequest, actor: string) {
+    // All submissions share the tax configuration/profile write lock, including
+    // disabled-TDS submissions racing a profile enable operation.
+    return this.incomeTax
+      ? this.incomeTax.submissionLock(() =>
+          this.submitLocked(period, body, actor),
+        )
+      : this.submitLocked(period, body, actor);
+  }
+  private async submitLocked(
     period: string,
     body: SubmitPayrollRequest,
     actor: string,
@@ -573,6 +681,22 @@ export class RunPayrollService {
         'Payment date changed. Save the updated date in the draft before submitting.',
       );
     const ids = draft.checks.map((c) => c.employeeId);
+    for (const check of draft.checks) {
+      if (check.tax) {
+        const startMonth = Number(period.slice(5)) - check.tax.monthIndex;
+        const yearStart = new Date(
+          Date.UTC(Number(period.slice(0, 4)), startMonth - 1, 1),
+        );
+        const yearEnd = new Date(
+          Date.UTC(yearStart.getUTCFullYear() + 1, yearStart.getUTCMonth(), 1),
+        );
+        const payment = new Date(body.paymentDate + 'T00:00:00Z');
+        if (payment < yearStart || payment >= yearEnd)
+          throw new BadRequestException(
+            'Payment date falls outside the TDS snapshot financial year. Review tax applicability before submitting.',
+          );
+      }
+    }
     this.assertUnprocessed(run, ids);
     const validate = async () => {
       const latest = await this.calculate(period, ids);

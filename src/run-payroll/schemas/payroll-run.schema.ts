@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import type { PayrollTaxSnapshot } from '../../income-tax/income-tax.service';
 
 export interface PayCheckSnapshot {
   id: string;
@@ -10,6 +11,11 @@ export interface PayCheckSnapshot {
   employerContributions: number;
   deductions: number;
   netPay: number;
+  tds?: number;
+  tdsCalculationStatus?: string;
+  tdsCalculationStatusLabel?: string;
+  existingDeductions?: number;
+  tax?: PayrollTaxSnapshot;
   components: {
     name: string;
     category: string;
