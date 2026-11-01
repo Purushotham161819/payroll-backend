@@ -224,6 +224,18 @@ export class EmployeeTaxProfileService {
       if (!selection.regime) throw new BadRequestException(selection.message);
       return {
         yearCode: target,
+        ...(existing
+          ? {
+              editToken: this.token({
+                kind: 'edit',
+                organizationId: taxOrganization(),
+                employeeId: id,
+                yearCode: target,
+                version: existing.version,
+                actor,
+              }),
+            }
+          : {}),
         changeYearToken: this.token({
           kind: 'change-year',
           organizationId: taxOrganization(),

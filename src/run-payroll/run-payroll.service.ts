@@ -710,9 +710,26 @@ export class RunPayrollService {
         );
     };
     await validate();
+    // Fetch presentation data only for newly generated PDFs. Historical PDF bytes
+    // remain immutable and are never regenerated when organization details change.
+    const pdfOrganization =
+      this.org() === 'legacy'
+        ? null
+        : await this.connection
+            .collection('organizations')
+            .findOne(
+              { organizationId: this.org(), status: 'active' },
+              { projection: { address: 1 } },
+            );
     const checks = draft.checks.map((check) => ({
       ...check,
-      pdf: payslipPdf(draft.organizationName, period, body.paymentDate, check),
+      pdf: payslipPdf(
+        draft.organizationName,
+        period,
+        body.paymentDate,
+        check,
+        pdfOrganization?.address,
+      ),
     }));
     const finalFields = {
       checks,

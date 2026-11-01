@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+# Local PDF samples, previews and reference images
+/artifacts/
+
 # TypeScript build cache
 *.tsbuildinfo
 

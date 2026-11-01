@@ -12,6 +12,7 @@ import { User } from '../auth/auth.schema';
 import { withAccountLock, publicUser } from '../auth/account-storage';
 import { CreateUserDto, UserDetailsDto } from '../auth/users.dto';
 import { OnboardDto, PageDto } from './platform.dto';
+import { OrganizationAddressDto } from './organization-settings.dto';
 
 @Injectable()
 export class PlatformService implements OnModuleInit {
@@ -132,6 +133,73 @@ export class PlatformService implements OnModuleInit {
   async details(actor: string, version: number, id: string) {
     await this.actor(actor, version);
     return this.organization(id);
+  }
+  async organizationSettings(id?: string) {
+    if (!id)
+      throw new ForbiddenException(
+        'An organization account is required to manage its address.',
+      );
+    const organization = await this.organization(id);
+    if (organization.status !== 'active')
+      throw new ForbiddenException('Organization is not active.');
+    return {
+      organizationName: organization.name,
+      addressVersion: organization.addressVersion ?? 0,
+      address: Object.fromEntries(
+        [
+          'addressLine1',
+          'addressLine2',
+          'city',
+          'state',
+          'country',
+          'zipCode',
+        ].map((key) => [key, organization.address?.[key] ?? '']),
+      ),
+    };
+  }
+  async saveOrganizationAddress(
+    id: string | undefined,
+    actor: string,
+    dto: OrganizationAddressDto,
+  ) {
+    await this.organizationSettings(id);
+    const address = Object.fromEntries(
+      [
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'state',
+        'country',
+        'zipCode',
+      ].map((key) => [key, dto[key as keyof OrganizationAddressDto]]),
+    );
+    const result = await this.organizations.updateOne(
+      {
+        organizationId: id,
+        status: 'active',
+        ...(dto.version === 0
+          ? {
+              $or: [
+                { addressVersion: 0 },
+                { addressVersion: { $exists: false } },
+              ],
+            }
+          : { addressVersion: dto.version }),
+      },
+      {
+        $set: {
+          address,
+          addressUpdatedAt: new Date(),
+          addressUpdatedBy: actor,
+        },
+        $inc: { addressVersion: 1 },
+      },
+    );
+    if (!result.matchedCount)
+      throw new ConflictException(
+        'Organization address changed. Reload before editing again.',
+      );
+    return this.organizationSettings(id);
   }
   async onboard(actor: string, version: number, dto: OnboardDto) {
     return this.write(actor, version, async () => {

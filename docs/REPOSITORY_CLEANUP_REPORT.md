@@ -56,7 +56,7 @@ The archive is retained as a whole to preserve existing uncommitted work and rel
 | `statutory-engine-work/` | 11 | Earlier frontend statutory/payroll setup snapshots; retain. |
 | `ui-identifiers/` | 27 | Employee ID/formula UI/report staging and tests; retain. |
 
-[The audit inventory](docs/repository-audit-inventory.json) records every archived file's exact path, size, SHA-256, classification, observed import strings, Git state, and identical current frontend files where found. Import strings inside generator scripts may describe generated code; they are not claims that every string is a live dependency.
+[The audit inventory](repository-audit-inventory.json) records every archived file's exact path, size, SHA-256, classification, observed import strings, Git state, and identical current frontend files where found. Import strings inside generator scripts may describe generated code; they are not claims that every string is a live dependency.
 
 ### Generated and project folders
 

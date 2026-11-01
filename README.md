@@ -129,9 +129,13 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 
 ## Super Admin portal
 
-See [SUPER-ADMIN.md](SUPER-ADMIN.md) for first-account setup, customer onboarding,
+See [SUPER-ADMIN.md](docs/SUPER-ADMIN.md) for first-account setup, customer onboarding,
 organization isolation, password resets and the existing local account-lock blocker.
 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## PayStream documentation
+
+See the [documentation index](docs/README.md) for setup, architecture, security, payroll, testing and implementation notes.

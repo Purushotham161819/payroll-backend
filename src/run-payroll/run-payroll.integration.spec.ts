@@ -13,6 +13,7 @@ import {
 import { PayrollRun } from './schemas/payroll-run.schema';
 import { tenantContext } from '../organizations/tenant-context';
 import * as pdf from './payslip';
+import { inspectPdf } from '../../test/pdf-document';
 
 const integration =
   process.env.RUN_PAYROLL_MONGO_TESTS === '1' ? describe : describe.skip;
@@ -263,10 +264,11 @@ integration('Run Payroll persistence (isolated MongoDB)', () => {
     expect(submitted.totals).toEqual(draft.totals);
     const bytes = await service.pdf(period(3), ids[0]);
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(bytes.toString()).toContain('PAYSLIP');
-    expect(bytes.toString()).toContain('Visible Loan');
-    expect(bytes.toString()).not.toContain('Hidden deduction');
-    expect(bytes.toString()).toContain('PayStream');
+    const decoded = await inspectPdf(bytes);
+    expect(decoded.text).toContain('Earnings and Allowances');
+    expect(decoded.text).toContain('Visible Loan');
+    expect(decoded.text).not.toContain('Hidden deduction');
+    expect(decoded.text).toContain('PayStream');
     expect(await service.submit(period(3), body, 'tester')).toEqual(submitted);
     await expect(
       service.submit(

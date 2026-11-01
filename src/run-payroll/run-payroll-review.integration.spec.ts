@@ -8,6 +8,7 @@ import { RunPayrollModule } from './run-payroll.module';
 import { RunPayrollService } from './run-payroll.service';
 import { TaxConfigurationService } from '../tax-configuration/tax-configuration.service';
 import { EmployeeTaxProfileService } from '../employee-tax-profile/employee-tax-profile.service';
+import { inspectPdf } from '../../test/pdf-document';
 const integration =
   process.env.RUN_PAYROLL_MONGO_TESTS === '1' ? describe : describe.skip;
 integration(
@@ -357,9 +358,9 @@ integration(
           (c: any) => c.name === 'Income Tax / TDS',
         ),
       ).toHaveLength(1);
-      const pdf = (await runs.pdf(period, valid)).toString('latin1');
-      expect(pdf).toContain('Income Tax / TDS');
-      expect(pdf).toContain('2000.00');
+      const pdf = await inspectPdf(await runs.pdf(period, valid));
+      expect((pdf.text.match(/\bTDS\b/g) ?? []).length).toBe(1);
+      expect(pdf.text).toContain('2,000.00');
     });
     it('includes all optional TDS states in mixed totals, persists zero amounts and protects finalized employees', async () => {
       const submitted = await finalize(
@@ -549,6 +550,15 @@ integration(
               json: { name: 'Isolated QA organization' },
             });
           });
+          const expectedPayroll = await runs.preview({
+            period: `${year}-07`,
+            employeeIds: [blocked, stale, missing, valid],
+            recalculate: true,
+          });
+          const expectedNet = expectedPayroll.totals.netPay.toLocaleString(
+            'en-IN',
+            { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+          );
           await page.goto(
             `http://127.0.0.1:${server.address().port}/payroll/run?employees=${blocked},${stale},${missing},${valid}`,
           );
@@ -560,20 +570,32 @@ integration(
           ).toHaveCount(0);
           await browserExpect(
             page.locator('[aria-label="Total NET Pay"]'),
-          ).toContainText('778,000.00');
+          ).toContainText(expectedNet);
           await browserExpect(
             page.getByRole('columnheader', { name: 'TDS', exact: true }),
           ).toBeVisible();
-          await browserExpect(
-            page
-              .getByRole('row')
-              .filter({
-                has: page.getByRole('checkbox', {
-                  name: 'Include Estimate Employee in payroll',
-                  exact: true,
-                }),
-              }),
-          ).toContainText('Estimate saved');
+          const estimateRow = page.getByRole('row').filter({
+            has: page.getByRole('checkbox', {
+              name: 'Include Estimate Employee in payroll',
+              exact: true,
+            }),
+          });
+          await browserExpect(estimateRow).not.toContainText('Estimate saved');
+          const warning = estimateRow.getByRole('button', {
+            name: 'Employee requires attention: Estimate Employee',
+          });
+          await warning.click();
+          await browserExpect(page.getByRole('dialog')).toContainText(
+            'Estimate saved',
+          );
+          await page.keyboard.press('Escape');
+          await browserExpect(page.getByRole('dialog')).toHaveCount(0);
+          await browserExpect(warning).toBeFocused();
+          await warning.click();
+          await browserExpect(page.getByRole('dialog')).toBeVisible();
+          await page.mouse.click(5, 5);
+          await browserExpect(page.getByRole('dialog')).toHaveCount(0);
+          await browserExpect(warning).toBeFocused();
           await page
             .getByRole('checkbox', {
               name: 'Include Valid Employee in payroll',
@@ -582,7 +604,7 @@ integration(
             .uncheck();
           await browserExpect(
             page.locator('[aria-label="Total NET Pay"]'),
-          ).toContainText('585,000.00');
+          ).toContainText('5,85,000.00');
           await page
             .getByRole('checkbox', {
               name: 'Include Valid Employee in payroll',
@@ -591,7 +613,7 @@ integration(
             .check();
           await browserExpect(
             page.locator('[aria-label="Total NET Pay"]'),
-          ).toContainText('778,000.00');
+          ).toContainText(expectedNet);
           await page
             .getByLabel('Payment Date', { exact: true })
             .fill(`${year}-07-28`);
@@ -623,6 +645,33 @@ integration(
               name: 'Payroll Submitted Successfully',
             }),
           ).toBeVisible();
+          const finalizedRow = page
+            .getByRole('row')
+            .filter({
+              has: page.getByRole('link', { name: 'Valid', exact: true }),
+            });
+          await finalizedRow
+            .getByRole('button', { name: 'View Pay Check', exact: true })
+            .click();
+          await browserExpect(
+            page.getByRole('dialog').locator('iframe'),
+          ).toHaveAttribute('src', /^blob:/);
+          await page
+            .getByRole('button', {
+              name: 'Close pay check viewer',
+              exact: true,
+            })
+            .click();
+          const [downloaded] = await Promise.all([
+            page.waitForEvent('download'),
+            finalizedRow
+              .getByRole('button', { name: 'Download Pay Check', exact: true })
+              .click(),
+          ]);
+          expect(downloaded.suggestedFilename()).toMatch(/\.pdf$/);
+          expect(fs.readFileSync(await downloaded.path())).toEqual(
+            await runs.pdf(`${year}-07`, valid),
+          );
           expect(
             await db.model('PayrollRun').countDocuments({
               period: `${year}-07`,

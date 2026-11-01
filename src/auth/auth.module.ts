@@ -1,5 +1,6 @@
 import { PlatformController } from '../organizations/platform.controller';
 import { PlatformService } from '../organizations/platform.service';
+import { OrganizationSettingsController } from '../organizations/organization-settings.controller';
 import { TenantInterceptor } from '../organizations/tenant.interceptor';
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
@@ -15,7 +16,12 @@ import { UsersService } from './users.service';
   imports: [
     MongooseModule.forFeature([{ name: 'AuthUser', schema: UserSchema }]),
   ],
-  controllers: [AuthController, UsersController, PlatformController],
+  controllers: [
+    AuthController,
+    UsersController,
+    PlatformController,
+    OrganizationSettingsController,
+  ],
   providers: [
     PlatformService,
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },

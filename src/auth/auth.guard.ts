@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { PlatformController } from '../organizations/platform.controller';
+import { OrganizationSettingsController } from '../organizations/organization-settings.controller';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersController } from './users.controller';
@@ -55,8 +56,19 @@ export class AuthGuard implements CanActivate {
         throw new ForbiddenException(
           'Change your temporary password before continuing',
         );
-      if (context.getClass() === UsersController && user.role !== 'admin')
+      if (
+        (context.getClass() === UsersController ||
+          context.getClass() === OrganizationSettingsController) &&
+        user.role !== 'admin'
+      )
         throw new ForbiddenException('Administrator access required');
+      if (
+        context.getClass() === OrganizationSettingsController &&
+        !user.organizationId
+      )
+        throw new ForbiddenException(
+          'An organization account is required to manage its address.',
+        );
     }
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       // Custom-header + exact Origin verification, including login, prevents CSRF.

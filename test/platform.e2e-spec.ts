@@ -12,6 +12,7 @@ import * as argon2 from 'argon2';
 import { User } from '../src/auth/auth.schema';
 import { configureSecurity } from '../src/auth/http-security';
 import { PlatformService } from '../src/organizations/platform.service';
+import { inspectPdf } from './pdf-document';
 
 describe('Super Admin, onboarding, forced passwords and business-data isolation', () => {
   let app: NestExpressApplication, db: Connection, users: Model<User>;
@@ -345,6 +346,283 @@ describe('Super Admin, onboarding, forced passwords and business-data isolation'
       'legacy@example.test',
     ]);
   });
+  it('stores an address on the existing organization and preserves all Super Admin-managed fields', async () => {
+    const endpoint = '/settings/organization-profile';
+    const organizations = db.collection('organizations');
+    const original = await organizations.findOne({ organizationId: a });
+    const count = await organizations.countDocuments();
+    const initial = await api()
+      .get(endpoint)
+      .set('Cookie', aCookie)
+      .expect(200);
+    expect(initial.body.organizationName).toBe(original!.name);
+    expect(initial.body.addressVersion).toBe(0);
+    expect(Object.values(initial.body.address)).toEqual([
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+    const address = {
+      addressLine1: '  123 Main St., #4  ',
+      addressLine2: 'Suite 5',
+      city: 'Boston',
+      state: 'MA',
+      country: 'United States',
+      zipCode: '00123',
+    };
+    const saved = await api()
+      .patch(endpoint + '/address')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({ ...address, version: 0 })
+      .expect(200);
+    expect(saved.body.address.addressLine1).toBe('123 Main St., #4');
+    expect(saved.body.address.zipCode).toBe('00123');
+    expect(saved.body.addressVersion).toBe(1);
+    expect((await api().get(endpoint).set('Cookie', aCookie)).body).toEqual(
+      saved.body,
+    );
+    const record = await organizations.findOne({ organizationId: a });
+    const {
+      address: storedAddress,
+      addressVersion,
+      addressUpdatedAt,
+      addressUpdatedBy,
+      ...unchanged
+    } = record!;
+    expect(unchanged).toEqual(original);
+    expect(addressUpdatedBy).toBe(adminA);
+    expect(storedAddress).toEqual(saved.body.address);
+    expect(await organizations.countDocuments()).toBe(count);
+    const updated = await api()
+      .patch(endpoint + '/address')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({
+        ...saved.body.address,
+        addressLine2: '',
+        zipCode: 'SW1A 1AA',
+        version: 1,
+      })
+      .expect(200);
+    expect(updated.body.address.zipCode).toBe('SW1A 1AA');
+    expect(updated.body.address.addressLine2).toBe('');
+    await api()
+      .patch(endpoint + '/address')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({ ...address, version: 1 })
+      .expect(409);
+    expect((await api().get(endpoint).set('Cookie', aCookie)).body).toEqual(
+      updated.body,
+    );
+  });
+  it('enforces address authorization, request origin and strict address-only payloads', async () => {
+    const endpoint = '/settings/organization-profile';
+    await api().get(endpoint).expect(401);
+    for (const cookie of [memberCookie, superCookie, legacyCookie]) {
+      await api().get(endpoint).set('Cookie', cookie).expect(403);
+      await api()
+        .patch(endpoint + '/address')
+        .set(headers)
+        .set('Cookie', cookie)
+        .send({})
+        .expect(403);
+    }
+    const current = (await api().get(endpoint).set('Cookie', aCookie)).body;
+    const payload = { ...current.address, version: current.addressVersion };
+    await api()
+      .patch(endpoint + '/address')
+      .set('Cookie', aCookie)
+      .send(payload)
+      .expect(403);
+    for (const extra of [
+      { name: 'Forged organization' },
+      { organizationId: b },
+      { subscription: 'forged' },
+      { zipCode: 12345 },
+      { addressLine1: ' ' },
+      { city: '' },
+      { country: '' },
+      { state: '' },
+    ])
+      await api()
+        .patch(endpoint + '/address')
+        .set(headers)
+        .set('Cookie', aCookie)
+        .send({ ...payload, ...extra })
+        .expect(400);
+    expect((await api().get(endpoint).set('Cookie', aCookie)).body).toEqual(
+      current,
+    );
+  });
+  it('isolates addresses using authenticated account ownership rather than caller-provided organization IDs', async () => {
+    const endpoint = '/settings/organization-profile';
+    const aBefore = (await api().get(endpoint).set('Cookie', aCookie)).body;
+    const bBefore = (await api().get(endpoint).set('Cookie', bCookie)).body;
+    expect(bBefore.organizationName).toBe('Customer B');
+    expect(Object.values(bBefore.address)).toEqual(['', '', '', '', '', '']);
+    const forged = await api()
+      .get(endpoint + '?organizationId=' + b)
+      .set('Cookie', aCookie)
+      .set('X-Organization-Id', b)
+      .expect(200);
+    expect(forged.body).toEqual(aBefore);
+    await api()
+      .patch(endpoint + '/address?organizationId=' + a)
+      .set(headers)
+      .set('Cookie', bCookie)
+      .send({
+        addressLine1: '10 B Street',
+        city: 'Toronto',
+        state: 'Ontario',
+        country: 'Canada',
+        zipCode: 'M5V 2T6',
+        version: 0,
+      })
+      .expect(200);
+    expect((await api().get(endpoint).set('Cookie', aCookie)).body).toEqual(
+      aBefore,
+    );
+    expect(
+      (await api().get(endpoint).set('Cookie', bCookie)).body.address.city,
+    ).toBe('Toronto');
+    const superDetails = await api()
+      .get('/super-admin/organizations/' + a)
+      .set('Cookie', superCookie)
+      .expect(200);
+    expect(superDetails.body.name).toBe(aBefore.organizationName);
+    expect(superDetails.body.organizationId).toBe(a);
+  });
+  (process.env.RUN_ORGANIZATION_BROWSER_TESTS === '1' ? it : it.skip)(
+    'edits and reloads organization address in the production UI and denies regular-user navigation',
+    async () => {
+      const path = require('node:path'),
+        fs = require('node:fs'),
+        http = require('node:http');
+      const frontend = path.resolve(__dirname, '../../payroll-frontend');
+      const root = path.join(frontend, 'dist/payroll-frontend/browser');
+      const { chromium, expect: browserExpect } = require(
+        path.join(frontend, 'node_modules/@playwright/test'),
+      );
+      const server = http.createServer((req: any, res: any) => {
+        const file = path.resolve(
+          root,
+          '.' + new URL(req.url, 'http://localhost').pathname,
+        );
+        if (file !== root && !file.startsWith(root + path.sep)) {
+          res.writeHead(403);
+          res.end();
+          return;
+        }
+        const target =
+          fs.existsSync(file) && fs.statSync(file).isFile()
+            ? file
+            : path.join(root, 'index.html');
+        res.setHeader(
+          'Content-Type',
+          target.endsWith('.js')
+            ? 'text/javascript'
+            : target.endsWith('.css')
+              ? 'text/css'
+              : 'text/html',
+        );
+        res.end(fs.readFileSync(target));
+      });
+      let browser: any;
+      try {
+        await new Promise<void>((resolve) =>
+          server.listen(0, '127.0.0.1', resolve),
+        );
+        const base = `http://127.0.0.1:${server.address().port}`,
+          backend = await app.getUrl();
+        browser = await chromium.launch({ channel: 'msedge', headless: true });
+        const page = await browser.newPage();
+        let cookie = aCookie;
+        const errors: string[] = [];
+        page.on('pageerror', (e: Error) => errors.push(e.message));
+        await page.route('http://localhost:3000/**', async (route: any) => {
+          const target = new URL(route.request().url());
+          const response = await route.fetch({
+            url: backend + target.pathname + target.search,
+            headers: {
+              ...route.request().headers(),
+              cookie,
+              origin: headers.Origin,
+              'x-payroll-request': '1',
+            },
+          });
+          // This isolated proxy serves the UI on a random port. Reflect only
+          // that test origin; the real application's CORS/CSRF policy is intact.
+          await route.fulfill({
+            response,
+            headers: {
+              ...response.headers(),
+              'access-control-allow-origin': base,
+              'access-control-allow-credentials': 'true',
+            },
+          });
+        });
+        await page.goto(base + '/settings/organization');
+        await browserExpect(
+          page.getByRole('heading', { name: 'Organization Information' }),
+        ).toBeVisible();
+        await browserExpect(
+          page.getByText('Renamed Customer A', { exact: true }).last(),
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        await page
+          .getByLabel('Address Line 1', { exact: false })
+          .fill('321 Browser Avenue, #7');
+        await page.getByLabel('Zip Code', { exact: false }).fill('00042');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+        await browserExpect(
+          page.getByText('Organization address saved.', { exact: true }),
+        ).toBeVisible();
+        await page.reload();
+        await browserExpect(page.locator('#addressLine1')).toHaveValue(
+          '321 Browser Avenue, #7',
+        );
+        await browserExpect(page.locator('#zipCode')).toHaveValue('00042');
+        await browserExpect(page.locator('#addressLine1')).toHaveAttribute(
+          'readonly',
+          '',
+        );
+        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        await page.locator('#city').fill('Unsaved city');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await browserExpect(page.locator('#city')).toHaveValue('Boston');
+        expect(
+          (await db.collection('organizations').findOne({ organizationId: a }))!
+            .address.zipCode,
+        ).toBe('00042');
+        cookie = memberCookie;
+        await page.goto(base + '/settings');
+        await browserExpect(
+          page.getByRole('heading', { name: 'Salary Components', exact: true }),
+        ).toBeVisible();
+        await browserExpect(
+          page.getByRole('link', {
+            name: 'Organization Settings',
+            exact: true,
+          }),
+        ).toHaveCount(0);
+        await page.goto(base + '/settings/organization');
+        await browserExpect(page).toHaveURL(base + '/');
+        await browserExpect(
+          page.getByRole('heading', { name: 'Organization Information' }),
+        ).toHaveCount(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await browser?.close();
+        await new Promise<void>((resolve) => server.close(resolve));
+      }
+    },
+    60000,
+  );
   it('isolates employees, identifiers, indexes, and forged cross-tenant reads and writes', async () => {
     await api().get('/employees').set('Cookie', aCookie).expect(200, []);
     const first = await api()
@@ -449,6 +727,89 @@ describe('Super Admin, onboarding, forced passwords and business-data isolation'
     expect(payroll.body.employees.map((r: any) => r.employee._id)).toEqual([
       employeeA,
     ]);
+  });
+  it('embeds the scoped organization address in new PDFs and preserves stored bytes after later edits', async () => {
+    const period = new Date().getUTCFullYear() + '-11';
+    const before = await db
+      .collection('organizations')
+      .findOne({ organizationId: a });
+    const preview = await api()
+      .post('/payroll/runs/preview')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({ period, employeeIds: [employeeA], recalculate: true })
+      .expect(201);
+    const draft = await api()
+      .post('/payroll/runs/draft')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({
+        period,
+        employeeIds: [employeeA],
+        version: preview.body.version,
+        inputHash: preview.body.inputHash,
+      })
+      .expect(201);
+    const submitted = await api()
+      .post('/payroll/runs/' + period + '/submit')
+      .set(headers)
+      .set('Cookie', aCookie)
+      .send({
+        version: draft.body.version,
+        paymentDate: period + '-30',
+        idempotencyKey: randomBytes(16).toString('hex'),
+      })
+      .expect(201);
+    const url = '/payroll/runs/' + period + '/checks/' + employeeA + '/pdf';
+    const first = await api()
+      .get(url)
+      .set('Cookie', aCookie)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
+    const decoded = await inspectPdf(first.body);
+    expect(decoded.text).toContain(before!.name);
+    expect(decoded.text).toContain(before!.address.addressLine1);
+    expect(decoded.text).not.toContain('Customer B');
+    expect(decoded.text).toContain('EMP001');
+    expect(decoded.text).toContain(submitted.body.checks[0].firstName);
+    expect(decoded.text).toContain('Payment Date');
+    expect(decoded.text).toContain('30-Nov-');
+    expect(decoded.text).toContain(
+      new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+      }).format(submitted.body.checks[0].netPay),
+    );
+    await db.collection('organizations').updateOne(
+      { organizationId: a },
+      {
+        $set: {
+          name: 'Changed after pay check',
+          address: { addressLine1: 'New address after submission' },
+        },
+      },
+    );
+    await db
+      .collection(a.toLowerCase() + '_employees')
+      .updateOne(
+        { _id: new (require('mongoose').Types.ObjectId)(employeeA) },
+        { $set: { firstName: 'Changed after pay check' } },
+      );
+    const historical = await api().get(url).set('Cookie', aCookie).expect(200);
+    expect(historical.body).toEqual(first.body);
+    await api().get(url).set('Cookie', bCookie).expect(404);
+    const saved = await api()
+      .get('/payroll/runs/' + period)
+      .set('Cookie', aCookie)
+      .expect(200);
+    expect(saved.body.checks).toEqual(submitted.body.checks);
+    // Restore fixture metadata; no finalized payroll or PDF record is modified.
+    await db
+      .collection('organizations')
+      .updateOne(
+        { organizationId: a },
+        { $set: { name: before!.name, address: before!.address } },
+      );
   });
   it('lists only organization login accounts, supports pagination, and reports real totals', async () => {
     const result = await api()

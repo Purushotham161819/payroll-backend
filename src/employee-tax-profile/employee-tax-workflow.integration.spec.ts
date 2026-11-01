@@ -350,6 +350,55 @@ integration('Employee TDS profile explicit editing workflow', () => {
     expect(await db.model('EmployeeTdsCalculation').countDocuments()).toBe(1);
     expect(await runs.pdf(period, id)).toEqual(firstPdf);
   });
+  it('authorizes review and save of an existing target year without overwriting the source or its history', async () => {
+    const target = '/employees/' + id + '/income-tax/' + nextCode;
+    const source = await profiles.get(id, code);
+    const sourceHistory = (
+      await request(app.getHttpServer())
+        .get(endpoint() + '/history')
+        .expect(200)
+    ).body;
+    const permission = await request(app.getHttpServer())
+      .post(target + '/change-year')
+      .send({ fromYearCode: code, fromVersion: source.version })
+      .expect(201);
+    expect(permission.body.editToken).toEqual(expect.any(String));
+    // Opening/cancelling selection issues permission only; it writes nothing.
+    const before = await profiles.get(id, nextCode);
+    expect((await profiles.get(id, nextCode)).version).toBe(before.version);
+    const saved = await request(app.getHttpServer())
+      .put(target)
+      .send({
+        ...before,
+        editToken: permission.body.editToken,
+        reason: 'Reviewed target year',
+      })
+      .expect(200);
+    expect(saved.body.yearCode).toBe(nextCode);
+    expect(saved.body.version).toBe(before.version + 1);
+    expect(await profiles.get(id, code)).toEqual(source);
+    expect(
+      (await request(app.getHttpServer()).get(endpoint() + '/history')).body,
+    ).toEqual(sourceHistory);
+    const listed = await request(app.getHttpServer())
+      .get('/employees/' + id + '/income-tax')
+      .expect(200);
+    expect(listed.body[0].yearCode).toBe(nextCode);
+    const calculation = await request(app.getHttpServer())
+      .post(target + '/calculate')
+      .send({})
+      .expect(201);
+    expect(calculation.body.inputs.year.code).toBe(nextCode);
+    const state = await tax.get();
+    expect(calculation.body.configurationVersion).toBe(
+      state.published[nextCode + ':new'],
+    );
+    expect(
+      (await request(app.getHttpServer()).get(endpoint() + '/history')).body,
+    ).toEqual(sourceHistory);
+    expect(await profiles.list(id)).toHaveLength(2);
+    expect(await runs.pdf(period, id)).toEqual(firstPdf);
+  });
   it('reports persisted eligibility failures over HTTP and calculates after a saved correction', async () => {
     const employee = await db.model('Employee').create({
       firstName: 'Eligibility',
@@ -478,4 +527,177 @@ integration('Employee TDS profile explicit editing workflow', () => {
       .send({ version: 3 })
       .expect(403);
   });
+  (process.env.RUN_TAX_BROWSER_TESTS === '1' ? it : it.skip)(
+    'changes an existing year through the production Angular dialog, saves, reloads and cancels back without historical writes',
+    async () => {
+      const path = require('node:path'),
+        fs = require('node:fs'),
+        http = require('node:http');
+      const frontendRoot = path.resolve(__dirname, '../../../payroll-frontend');
+      const { chromium, expect: browserExpect } = require(
+        path.join(frontendRoot, 'node_modules/@playwright/test'),
+      );
+      const root = path.join(frontendRoot, 'dist/payroll-frontend/browser');
+      const server = http.createServer((req: any, res: any) => {
+        const file = path.resolve(
+          root,
+          '.' + new URL(req.url, 'http://localhost').pathname,
+        );
+        if (file !== path.resolve(root) && !file.startsWith(path.resolve(root) + path.sep)) {
+          res.writeHead(403);
+          res.end();
+          return;
+        }
+        const target =
+          fs.existsSync(file) && fs.statSync(file).isFile()
+            ? file
+            : path.join(root, 'index.html');
+        res.setHeader(
+          'Content-Type',
+          target.endsWith('.js')
+            ? 'text/javascript'
+            : target.endsWith('.css')
+              ? 'text/css'
+              : 'text/html',
+        );
+        res.end(fs.readFileSync(target));
+      });
+      let browser: any;
+      const untouched = await profiles.get(id, nextCode);
+      const history = (
+        await request(app.getHttpServer()).get(endpoint() + '/history')
+      ).body;
+      try {
+        await new Promise<void>((resolve) =>
+          server.listen(0, '127.0.0.1', resolve),
+        );
+        await app.listen(0, '127.0.0.1');
+        const api = await app.getUrl();
+        browser = await chromium.launch({ channel: 'msedge', headless: true });
+        const page = await browser.newPage(),
+          errors: string[] = [];
+        page.on('pageerror', (e: Error) => errors.push(e.message));
+        await page.route('http://localhost:3000/**', async (route: any) => {
+          const pathname = new URL(route.request().url()).pathname;
+          if (pathname === '/auth/me')
+            return route.fulfill({
+              json: { id: 'qa-admin', email: 'qa@example.test', role: 'admin' },
+            });
+          if (pathname === '/employees')
+            return route.fulfill({
+              json: await db.model('Employee').find().lean(),
+            });
+          if (
+            pathname.startsWith('/employees/') ||
+            pathname.startsWith('/settings/tax-configuration') ||
+            pathname === '/salary-components'
+          )
+            return route.fulfill({
+              response: await route.fetch({ url: api + pathname }),
+            });
+          return route.fulfill({
+            json: { displayName: 'Isolated QA organization' },
+          });
+        });
+        await page.goto(
+          `http://127.0.0.1:${server.address().port}/employees/${id}?tab=tax`,
+        );
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toHaveValue(nextCode);
+        const historyButton = page.getByRole('button', { name: 'View Calculation History', exact: true });
+        await historyButton.click();
+        await browserExpect(page.getByRole('dialog')).toContainText('Calculation History');
+        await browserExpect(page.getByRole('dialog').locator('tbody tr')).not.toHaveCount(0);
+        await page.keyboard.press('Escape');
+        await browserExpect(page.getByRole('dialog')).toHaveCount(0);
+        await browserExpect(historyButton).toBeFocused();
+        await page.getByRole('button', { name: 'View Tax Slabs', exact: true }).click();
+        await browserExpect(page.getByRole('dialog')).toContainText('Configuration:');
+        await browserExpect(page.getByRole('dialog').getByRole('columnheader', { name: 'Rate', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Close Tax Slabs', exact: true }).click();
+        await page.screenshot({ path: require('node:path').join(require('node:os').tmpdir(), 'paystream-tax-ui.png'), fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        expect(await page.locator('.employment-card').evaluate((element: HTMLElement) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+        await page.screenshot({ path: require('node:path').join(require('node:os').tmpdir(), 'paystream-tax-ui-mobile.png'), fullPage: true });
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await page
+          .getByRole('button', { name: 'Change Financial Year', exact: true })
+          .click();
+        const dialog = page.getByRole('dialog');
+        await browserExpect(dialog).toBeVisible();
+        await browserExpect(dialog.locator('select')).toHaveValue(nextCode);
+        await dialog.locator('select').selectOption(code);
+        await browserExpect(
+          dialog.getByRole('button', { name: 'Confirm Change Financial Year' }),
+        ).toBeEnabled();
+        await dialog
+          .getByRole('button', { name: 'Confirm Change Financial Year' })
+          .click();
+        await browserExpect(dialog).toHaveCount(0);
+        await browserExpect(
+          page.getByRole('button', { name: 'Save Tax Profile', exact: true }),
+        ).toBeEnabled();
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toHaveValue(code);
+        await page
+          .getByRole('button', { name: 'Save Tax Profile', exact: true })
+          .click();
+        await browserExpect(
+          page.getByText(
+            'Tax profile saved. Recalculate the annual estimate after input changes.',
+          ),
+        ).toBeVisible();
+        await page.reload();
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toHaveValue(code);
+        await page.getByRole('button', { name: 'Edit', exact: true }).click();
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toBeVisible();
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toBeDisabled();
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await page
+          .getByRole('button', { name: 'Change Financial Year', exact: true })
+          .click();
+        await page.getByRole('dialog').locator('select').selectOption(nextCode);
+        await page
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Confirm Change Financial Year' })
+          .click();
+        await browserExpect(page.getByRole('dialog')).toHaveCount(0);
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await browserExpect(
+          page.locator('#employee-tax-financial-year'),
+        ).toHaveValue(code);
+        expect(await profiles.get(id, nextCode)).toEqual(untouched);
+        expect(
+          (await request(app.getHttpServer()).get(endpoint() + '/history'))
+            .body,
+        ).toEqual(history);
+        expect(await runs.pdf(period, id)).toEqual(firstPdf);
+        await page.goto(`http://127.0.0.1:${server.address().port}/?status=All`);
+        const nameLink = page.getByRole('link', { name: 'EMP001', exact: true }).first();
+        await browserExpect(nameLink).toBeVisible();
+        const linkColor = await nameLink.evaluate((element: HTMLElement) => getComputedStyle(element).color);
+        await nameLink.hover();
+        expect(await nameLink.evaluate((element: HTMLElement) => getComputedStyle(element).textDecorationLine)).toBe('none');
+        expect(await nameLink.evaluate((element: HTMLElement) => getComputedStyle(element).color)).toBe(linkColor);
+        await nameLink.click();
+        await browserExpect(page).toHaveURL(new RegExp('/employees/' + id));
+        await page.goBack();
+        await browserExpect(nameLink).toBeVisible();
+        expect(await nameLink.evaluate((element: HTMLElement) => getComputedStyle(element).color)).toBe(linkColor);
+        expect(errors).toEqual([]);
+      } finally {
+        await browser?.close();
+        await new Promise<void>((resolve) => server.close(resolve));
+      }
+    },
+    60000,
+  );
 });
