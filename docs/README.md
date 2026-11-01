@@ -1,5 +1,11 @@
 # PayStream backend documentation
 
+See [Income Tax / TDS widget presentation](TDS-WIDGET-UI.md) for the redesigned TDS page, preservation evidence and regression results.
+
+See [Employee Details refinements](EMPLOYEE-DETAILS-REFINEMENTS.md) for equal-sized cards, optional contact numbers and embedded employment history.
+
+See [Employee form and independent information cards](EMPLOYEE-INFORMATION-CARDS.md) for the latest Employee Management changes and validation results.
+
 Run commands in these guides from the repository root unless a guide explicitly says otherwise. Historical reports retain their original verification results and file listings.
 
 See the [31 October 2026 cleanup report](CLEANUP-2026-10-31.md) and [file inventory](CLEANUP-2026-10-31-INVENTORY.json) for documentation moves, preservation checks, test results and final folder structures.
@@ -50,6 +56,7 @@ Start with [local development](LOCAL-DEVELOPMENT.md), [authentication and deploy
 - [RUN_PAYROLL_UNIFIED_UI](RUN_PAYROLL_UNIFIED_UI.md)
 - [SALARY_COMPONENTS](SALARY_COMPONENTS.md)
 - [SETTINGS_UI_REFINEMENT](SETTINGS_UI_REFINEMENT.md)
+- [Settings widget UI refinements](SETTINGS-WIDGET-UI.md)
 - [STATUTORY_DEDUCTIONS](STATUTORY_DEDUCTIONS.md)
 - [SUPER-ADMIN](SUPER-ADMIN.md)
 - [TAX-CONFIGURATION-SAVE-FIX](TAX-CONFIGURATION-SAVE-FIX.md)

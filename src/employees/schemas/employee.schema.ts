@@ -23,6 +23,30 @@ const EmploymentPeriodSchema = SchemaFactory.createForClass(EmploymentPeriod);
 
 @Schema({ collection: 'employees', timestamps: true, autoIndex: false })
 export class Employee {
+  @Prop({ type: String, trim: true, maxlength: 40 })
+  contactNumber?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  designation?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 250 })
+  addressLine1?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 250 })
+  addressLine2?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  city?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  state?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 32 })
+  zipCode?: string;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  country?: string;
+
   @Prop({ type: String, enum: ['Active', 'Terminated'], default: 'Active' })
   status!: 'Active' | 'Terminated';
 

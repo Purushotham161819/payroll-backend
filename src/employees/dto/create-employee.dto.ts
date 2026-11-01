@@ -11,8 +11,9 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PAY_FREQUENCIES } from '../pay-frequency';
+import { EmployeeProfileFieldsDto } from './employee-profile-fields.dto';
 
-export class CreateEmployeeDto {
+export class CreateEmployeeDto extends EmployeeProfileFieldsDto {
   @ValidateIf((_object, value) => value !== undefined)
   @IsIn(PAY_FREQUENCIES)
   payFrequency?: (typeof PAY_FREQUENCIES)[number];
