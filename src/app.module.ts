@@ -9,10 +9,12 @@ import { StatutoryDeductionsModule } from './statutory-deductions/statutory-dedu
 import { PayrollGeneratorModule } from './payroll-generator/payroll-generator.module';
 import { RunPayrollModule } from './run-payroll/run-payroll.module';
 import { AuthModule } from './auth/auth.module';
+import { ContractorsModule } from './contractors/contractors.module';
 
 @Module({
   imports: [
     AuthModule,
+    ContractorsModule,
     MongooseModule.forRoot(
       process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/payroll_db",
       { serverSelectionTimeoutMS: 5000, retryAttempts: 2, retryDelay: 1000 },
