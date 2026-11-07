@@ -1,3 +1,4 @@
+import { EmailService } from './email.service';
 import {
   Injectable,
   UnauthorizedException,
@@ -17,7 +18,10 @@ export class AuthService {
   private readonly dummy = argon2.hash(randomBytes(32), {
     type: argon2.argon2id,
   });
-  constructor(@InjectModel('AuthUser') private readonly users: Model<User>) {}
+  constructor(
+    @InjectModel('AuthUser') private readonly users: Model<User>,
+    private readonly mail: EmailService,
+  ) {}
   async login(email: string, password: string) {
     const user = await this.users
       .findOne({ email: email.trim().toLowerCase() })
@@ -26,7 +30,7 @@ export class AuthService {
       user?.passwordHash ?? (await this.dummy),
       password,
     );
-    if (!valid || !user?.active)
+    if (!valid || !user?.active || user.invitationPending)
       throw new UnauthorizedException('Invalid email or password');
     await this.organizationActive(user);
     return {
@@ -39,7 +43,11 @@ export class AuthService {
   }
   async current(id: string, version = 0) {
     const user = await this.users.findById(id).select('+sessionVersion');
-    if (!user?.active || (user.sessionVersion ?? 0) !== version)
+    if (
+      !user?.active ||
+      user.invitationPending ||
+      (user.sessionVersion ?? 0) !== version
+    )
       throw new UnauthorizedException('Authentication required');
     await this.organizationActive(user);
     return this.identity(user);
@@ -48,6 +56,8 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      ...(user.firstName ? { firstName: user.firstName } : {}),
+      ...(user.lastName ? { lastName: user.lastName } : {}),
       role: user.role,
       ...(user.organizationId ? { organizationId: user.organizationId } : {}),
       ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
@@ -82,7 +92,10 @@ export class AuthService {
       user.passwordHash = await hashPassword(password);
       user.mustChangePassword = false;
       user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+      user.resetHash = undefined;
+      user.resetExpiresAt = undefined;
       await user.save();
+      await this.mail.passwordChanged(user.email);
       return {
         message: 'Password changed. Sign in again with your new password.',
       };

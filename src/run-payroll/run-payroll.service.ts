@@ -373,7 +373,7 @@ export class RunPayrollService {
         ),
         payFrequency: this.snapshotFrequency(check, run),
         paymentStatus:
-          run.status === 'Submitted' ? 'Payment Pending' : 'Not Paid',
+          run.status === 'Submitted' ? (check.paymentStatus ?? 'Payment Pending') : 'Not Paid',
         ...(run.status === 'Submitted'
           ? {
               payrollStatus: 'Submitted',
@@ -719,18 +719,24 @@ export class RunPayrollService {
             .collection('organizations')
             .findOne(
               { organizationId: this.org(), status: 'active' },
-              { projection: { address: 1 } },
+              { projection: { address: 1, logo: 1 } },
             );
-    const checks = draft.checks.map((check) => ({
-      ...check,
-      pdf: payslipPdf(
-        draft.organizationName,
-        period,
-        body.paymentDate,
-        check,
-        pdfOrganization?.address,
-      ),
-    }));
+    const profiles = await this.employees.find({ _id: { $in: draft.checks.map(c => c.employeeId) } }).select('designation').lean().exec();
+    const designations = new Map(profiles.map(e => [String(e._id), e.designation]));
+    const checks = draft.checks.map((original) => {
+      const check = { ...original, designation: designations.get(original.employeeId) };
+      return {
+        ...check,
+        pdf: payslipPdf(
+          draft.organizationName,
+          period,
+          body.paymentDate,
+          check,
+          pdfOrganization?.address,
+          pdfOrganization?.logo,
+        ),
+      };
+    });
     const finalFields = {
       checks,
       status: 'Submitted' as const,
@@ -839,6 +845,22 @@ export class RunPayrollService {
           ),
         })),
     );
+  }
+  async markPaid(period: string, employeeId: string, actor: string) {
+    this.ids([employeeId]);
+    const run = await this.existing(period);
+    const submission = this.submissions(run).find(s => s.checks.some(c => c.employeeId === employeeId));
+    const check = submission?.checks.find(c => c.employeeId === employeeId);
+    if (!run || !submission || !check) throw new NotFoundException('Pay check not found.');
+    if (check.paymentStatus) throw new ConflictException('Pay Check is already Paid.');
+    const subIndex = (run.additionalSubmissions ?? []).findIndex(s => s.idempotencyKey === submission.idempotencyKey);
+    const prefix = submission === run ? 'checks' : 'additionalSubmissions.' + subIndex + '.checks';
+    const path = prefix + '.' + submission.checks.findIndex(c => c.employeeId === employeeId);
+    const result = await this.runs.updateOne({ organizationId: this.org(), period, status: 'Submitted',
+      [path + '.id']: check.id, [path + '.paymentStatus']: { $exists: false },
+    }, { $set: { [path + '.paymentStatus']: 'Paid', [path + '.paidAt']: new Date(), [path + '.paidBy']: actor } });
+    if (!result.modifiedCount) throw new ConflictException('Pay Check changed or is already Paid. Refresh and try again.');
+    return { paymentStatus: 'Paid' };
   }
   async pdf(period: string, employeeId: string) {
     this.ids([employeeId]);

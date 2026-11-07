@@ -10,6 +10,9 @@ import {
 
 const trimmed = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
+export class OrganizationLogoDto {
+ @IsString() @MaxLength(2800000) dataUrl: string;
+}
 export class OrganizationAddressDto {
   @IsInt() @Min(0) version: number;
 

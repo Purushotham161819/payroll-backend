@@ -20,6 +20,7 @@ export function payslipPdf(
   paymentDate: string,
   check: PayCheckSnapshot,
   address?: PayslipAddress,
+  logo?: string,
 ): string {
   fonts ??= {
     normal: readFileSync(join(__dirname, 'fonts/Carlito-Regular.ttf')).toString(
@@ -42,6 +43,12 @@ export function payslipPdf(
   }
   doc.setFont('Carlito', 'normal');
   doc.setTextColor(0);
+  if (logo) {
+    const image = doc.getImageProperties(logo);
+    const scale = Math.min(110 / image.width, 65 / image.height);
+    const width = image.width * scale, height = image.height * scale;
+    doc.addImage(logo, image.fileType, 545 - width, 55, width, height);
+  }
   const money = (value: number) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -98,6 +105,13 @@ export function payslipPdf(
   y = Math.max(227.42, y + 29.08);
   text(check.employeeCode ?? check.employeeId);
   text([check.firstName, check.lastName].map(clean).filter(Boolean).join(', '));
+  if (clean(check.designation)) {
+    doc.setFontSize(9);
+    for (const line of doc.splitTextToSize(clean(check.designation), 495) as string[]) {
+      doc.text(line, 49.68, y);
+      y += 12;
+    }
+  }
   const row = (
     label: string,
     value: string,

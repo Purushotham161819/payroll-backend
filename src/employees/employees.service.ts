@@ -1,3 +1,4 @@
+import { employeePageQuery } from './employee-page-query';
 import { EmployeeIdentifierService } from './employee-identifier.service';
 import {
   BadRequestException,
@@ -53,6 +54,13 @@ export class EmployeesService {
     }
   }
 
+  async findPage(query: Record<string,string>) {
+    const {page:requested,pageSize,filter}=employeePageQuery(query);
+    const total=await this.employees.countDocuments(filter).exec();
+    const page=Math.min(requested,Math.max(1,Math.ceil(total/pageSize)));
+    const items=await this.employees.find(filter).sort({_id:1}).skip((page-1)*pageSize).limit(pageSize).lean().exec();
+    return {items,total,page,pageSize};
+  }
   async findAll() {
     try {
       return await this.employees.find().exec();

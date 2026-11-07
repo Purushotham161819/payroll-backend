@@ -55,7 +55,29 @@ export function configureSecurity(
       limit: 10,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
-      message: { message: 'Too many password-change attempts. Try again later.' },
+      message: {
+        message: 'Too many password-change attempts. Try again later.',
+      },
+    }),
+  );
+  app.use(
+    '/auth/invitation',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 10,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      message: { message: 'Too many invitation attempts. Try again later.' },
+    }),
+  );
+  app.use(
+    ['/auth/forgot-password', '/auth/reset-password'],
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 10,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      message: { message: 'Too many attempts. Try again later.' },
     }),
   );
   app.use(

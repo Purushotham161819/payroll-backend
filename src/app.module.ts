@@ -1,3 +1,4 @@
+import { ReportsModule } from './reports/reports.module';
 import { Module } from "@nestjs/common";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
@@ -14,6 +15,7 @@ import { ContractorsModule } from './contractors/contractors.module';
 @Module({
   imports: [
     AuthModule,
+    ReportsModule,
     ContractorsModule,
     MongooseModule.forRoot(
       process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/payroll_db",

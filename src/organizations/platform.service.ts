@@ -1,3 +1,5 @@
+import { validateLogo } from './organization-logo';
+import { EmailService } from '../auth/email.service';
 import {
   Injectable,
   ForbiddenException,
@@ -16,7 +18,10 @@ import { OrganizationAddressDto } from './organization-settings.dto';
 
 @Injectable()
 export class PlatformService implements OnModuleInit {
-  constructor(@InjectModel('AuthUser') private readonly users: Model<User>) {}
+  constructor(
+    @InjectModel('AuthUser') private readonly users: Model<User>,
+    private readonly mail: EmailService,
+  ) {}
   private get organizations() {
     return this.users.db.collection('organizations');
   }
@@ -143,6 +148,7 @@ export class PlatformService implements OnModuleInit {
     if (organization.status !== 'active')
       throw new ForbiddenException('Organization is not active.');
     return {
+      logo: organization.logo ?? null,
       organizationName: organization.name,
       addressVersion: organization.addressVersion ?? 0,
       address: Object.fromEntries(
@@ -156,6 +162,15 @@ export class PlatformService implements OnModuleInit {
         ].map((key) => [key, organization.address?.[key] ?? '']),
       ),
     };
+  }
+  async saveOrganizationLogo(id: string | undefined, actor: string, dataUrl: string) {
+    const user = await this.users.findById(actor);
+    if (!id || !user?.active || user.role !== 'admin' || user.organizationId !== id) throw new ForbiddenException('Administrator access required');
+    await this.organizationSettings(id);
+    const logo = dataUrl ? validateLogo(dataUrl) : null;
+    const result = await this.organizations.updateOne({ organizationId: id, status: 'active' }, { $set: { logo, logoUpdatedAt: new Date(), logoUpdatedBy: actor } });
+    if (!result.matchedCount) throw new ConflictException('Organization is unavailable.');
+    return this.organizationSettings(id);
   }
   async saveOrganizationAddress(
     id: string | undefined,
@@ -229,6 +244,8 @@ export class PlatformService implements OnModuleInit {
         });
         const account = await this.users.create({
           _id: accountId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
           email: dto.email,
           role: 'admin',
           active: true,
@@ -350,6 +367,8 @@ export class PlatformService implements OnModuleInit {
       );
       const user = await this.users.create({
         _id: accountId,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
         email: dto.email,
         role: dto.role,
         active: dto.active,
@@ -382,6 +401,7 @@ export class PlatformService implements OnModuleInit {
       if (!user) throw new NotFoundException('Account not found');
       if (
         user.role === 'admin' &&
+        !user.invitationPending &&
         user.active &&
         (change.active === false ||
           (change.details && change.details.role !== 'admin')) &&
@@ -389,17 +409,44 @@ export class PlatformService implements OnModuleInit {
           organizationId: org,
           role: 'admin',
           active: true,
+          invitationPending: { $ne: true },
         })) <= 1
       )
         throw new ConflictException(
           'The last active administrator must be preserved',
         );
       if (change.details) {
+        if (change.details.firstName !== undefined)
+          user.firstName = change.details.firstName;
+        if (change.details.lastName !== undefined)
+          user.lastName = change.details.lastName;
+        if (user.invitationPending && user.email !== change.details.email) {
+          user.invitationHash = undefined;
+          user.invitationExpiresAt = undefined;
+          user.invitationDelivery = 'not_sent';
+        }
+        if (user.email !== change.details.email) {
+          user.resetHash = undefined;
+          user.resetExpiresAt = undefined;
+        }
         user.email = change.details.email;
         user.role = change.details.role;
       }
-      if (change.active !== undefined) user.active = change.active;
+      if (change.active !== undefined) {
+        if (!change.active) {
+          user.resetHash = undefined;
+          user.resetExpiresAt = undefined;
+        }
+        user.active = change.active;
+        if (!change.active && user.invitationPending) {
+          user.invitationHash = undefined;
+          user.invitationExpiresAt = undefined;
+          user.invitationDelivery = 'not_sent';
+        }
+      }
       if (change.password) {
+        user.resetHash = undefined;
+        user.resetExpiresAt = undefined;
         user.passwordHash = await hashPassword(change.password);
         user.mustChangePassword = true;
       }
@@ -425,6 +472,7 @@ export class PlatformService implements OnModuleInit {
         org,
         user.id,
       );
+      if (change.password) await this.mail.passwordChanged(user.email);
       return change.password
         ? {
             message:

@@ -84,6 +84,9 @@ export function publicUser(user: any) {
   return {
     id: user.id ?? String(user._id),
     email: user.email,
+    ...(user.firstName ? { firstName: user.firstName } : {}),
+    ...(user.lastName ? { lastName: user.lastName } : {}),
+    ...(user.invitationPending ? { invitationPending: true, invitationDelivery: user.invitationDelivery ?? 'not_sent' } : {}),
     role: user.role,
     active: user.active,
     createdAt: user.createdAt,

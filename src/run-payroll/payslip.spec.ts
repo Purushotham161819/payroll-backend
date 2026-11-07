@@ -211,3 +211,20 @@ describe('Black-and-white pay check PDF from finalized snapshot', () => {
     expect((await inspectPdf(bytes, true)).coloredPixels).toBe(0);
   });
 });
+
+it('renders designation immediately below the name and embeds the logo only when supplied', async () => {
+ const check = {...snapshot(), designation: 'Software Engineer'};
+ const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4XmP4z8AARAAI/gH/egE/eAAAAABJRU5ErkJggg==';
+ const generate = (logo?: string) => Buffer.from(payslipPdf('Org A', '2026-11', '2026-11-30', check, undefined, logo), 'base64');
+ const withLogo = generate(png), withoutLogo = generate();
+ expect(withLogo.toString('latin1')).toContain('/Subtype /Image');
+ expect(withoutLogo.toString('latin1')).not.toContain('/Subtype /Image');
+ const pdf = await inspectPdf(withLogo);
+ expect(pdf.text.indexOf('Software Engineer')).toBeGreaterThan(pdf.text.indexOf('Ada, Example'));
+ const name = pdf.positions.find(p => p.text === 'Ada, Example')!;
+ const designation = pdf.positions.find(p => p.text === 'Software Engineer')!;
+ expect(designation.x).toBeCloseTo(name.x);
+ expect(designation.y).toBeGreaterThan(name.y);
+ expect(designation.size).toBeLessThan(name.size);
+ expect(pdf.text).toContain('950.00');
+});

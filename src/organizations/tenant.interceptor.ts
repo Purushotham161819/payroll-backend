@@ -57,6 +57,7 @@ export class TenantInterceptor implements NestInterceptor {
         const path = context.switchToHttp().getRequest().path as string;
         const business = [
           '/employees',
+          '/reports',
           '/salary-components',
           '/payroll/',
           '/settings/statutory-deductions',

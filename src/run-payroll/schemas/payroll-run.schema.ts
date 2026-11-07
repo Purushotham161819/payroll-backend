@@ -5,6 +5,10 @@ export interface PayCheckSnapshot {
   id: string;
   employeeId: string;
   employeeCode?: string;
+  designation?: string;
+  paymentStatus?: 'Paid';
+  paidAt?: Date;
+  paidBy?: string;
   firstName: string;
   lastName: string;
   grossPay: number;

@@ -1,5 +1,6 @@
 
 import './environment';
+import { configureOrganizationLogoBodyParser } from './organizations/organization-logo-body-parser';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -9,6 +10,7 @@ import { configureSecurity } from './auth/http-security';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  configureOrganizationLogoBodyParser(app);
   app.enableShutdownHooks();
   configureSecurity(app);
 

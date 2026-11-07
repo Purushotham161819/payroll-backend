@@ -28,7 +28,18 @@ export class AuthGuard implements CanActivate {
     const login =
       context.getClass() === AuthController &&
       context.getHandler() === AuthController.prototype.login;
-    if (!login) {
+    const invitation =
+      context.getClass() === AuthController &&
+      (context.getHandler() === AuthController.prototype.inspectInvitation ||
+        context.getHandler() === AuthController.prototype.completeInvitation);
+    const reset =
+      context.getClass() === AuthController &&
+      [
+        AuthController.prototype.forgotPassword,
+        AuthController.prototype.inspectReset,
+        AuthController.prototype.completeReset,
+      ].includes(context.getHandler() as any);
+    if (!login && !invitation && !reset) {
       if (
         !req.session?.userId ||
         !req.session.expiresAt ||

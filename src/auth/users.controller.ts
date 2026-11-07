@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import {
-  CreateUserDto,
+  InviteUserDto,
   PasswordDto,
   UserDetailsDto,
   UserStatusDto,
@@ -17,12 +17,15 @@ export class UsersController {
       req.session.sessionVersion ?? 0,
     );
   }
-  @Post() create(@Req() req: Request, @Body() dto: CreateUserDto) {
+  @Post() create(@Req() req: Request, @Body() dto: InviteUserDto) {
     return this.users.create(
       req.session.userId!,
       req.session.sessionVersion ?? 0,
       dto,
     );
+  }
+  @Post(':id/invitation') resend(@Req() req: Request, @Param('id') id: string) {
+    return this.users.resend(req.session.userId!, req.session.sessionVersion ?? 0, id);
   }
   @Patch(':id') details(
     @Req() req: Request,

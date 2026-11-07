@@ -1,3 +1,5 @@
+import { InvitationMail } from '../src/auth/invitation-mail';
+import { InvitationsService } from '../src/auth/invitations.service';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -14,6 +16,7 @@ import { configureSecurity } from '../src/auth/http-security';
 
 describe('Administrator provisioning, authorization and user management', () => {
   let app: NestExpressApplication, connection: Connection, users: Model<User>;
+  let invitationToken = '';
   let adminId: string, adminCookie: string, userId: string, userCookie: string;
   const database = `payroll_users_test_${randomBytes(8).toString('hex')}`;
   const uri = `mongodb://127.0.0.1:27017/${database}`;
@@ -66,7 +69,7 @@ describe('Administrator provisioning, authorization and user management', () => 
       require('../src/app.module') as typeof import('../src/app.module');
     const module = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    }).overrideProvider(InvitationMail).useValue({send: async (_to:string,_first:string,_last:string,url:string) => { invitationToken = new URL(url).hash.slice('#token='.length); }}).compile();
     app = module.createNestApplication<NestExpressApplication>();
     configureSecurity(app);
     app.useGlobalPipes(
@@ -110,7 +113,7 @@ describe('Administrator provisioning, authorization and user management', () => 
       .post('/users')
       .send({
         email: '  MEMBER@EXAMPLE.TEST  ',
-        password,
+        firstName: 'Member', lastName: 'Account',
         role: 'user',
         active: true,
       })
@@ -121,12 +124,15 @@ describe('Administrator provisioning, authorization and user management', () => 
     expect(response.body).not.toHaveProperty('sessionVersion');
     const stored = await users.findById(userId).select('+passwordHash');
     expect(stored!.passwordHash).toMatch(/^\$argon2id\$/);
-    expect(await argon2.verify(stored!.passwordHash, password)).toBe(true);
+    expect(await argon2.verify(stored!.passwordHash, password)).toBe(false);
+    expect(response.body).toMatchObject({firstName:'Member',lastName:'Account',invitationPending:true});
+    await app.get(InvitationsService).complete(invitationToken,password,password);
+    expect(await argon2.verify((await users.findById(userId).select('+passwordHash'))!.passwordHash,password)).toBe(true);
     await admin()
       .post('/users')
       .send({
         email: email.toUpperCase(),
-        password,
+        firstName: 'Member', lastName: 'Account',
         role: 'user',
         active: true,
       })
@@ -145,7 +151,7 @@ describe('Administrator provisioning, authorization and user management', () => 
       .expect(404);
     expect((await admin().get('/users').expect(200)).body).toHaveLength(2);
   });
-  it('rejects seven-character creation, reset and operator passwords', async () => {
+  it('rejects direct creation passwords and seven-character reset and operator passwords', async () => {
     await admin().post('/users').send({email:'short@example.test',password:'1234567',role:'user',active:true}).expect(400);
     const reset = await admin().patch(`/users/${userId}/password`).send({password:'1234567'}).expect(400);
     expect(reset.body.message).toContain('Password must be at least 8 characters long.');

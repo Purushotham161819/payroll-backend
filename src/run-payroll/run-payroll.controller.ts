@@ -1,5 +1,6 @@
 import {
   Body,
+  ForbiddenException,
   Controller,
   Get,
   Param,
@@ -12,7 +13,7 @@ import type { Request, Response } from 'express';
 import { RunPayrollService } from './run-payroll.service';
 import type { RunRequest, SubmitPayrollRequest } from './run-payroll.dto';
 
-type AccountRequest = Request & { account: { id: string; email: string } };
+type AccountRequest = Request & { account: { id: string; email: string; role?: string } };
 @Controller('payroll')
 export class RunPayrollController {
   constructor(private readonly service: RunPayrollService) {}
@@ -41,6 +42,10 @@ export class RunPayrollController {
     @Query('submissionId') submissionId?: string,
   ) {
     return this.service.submission(period, submissionId);
+  }
+  @Post('runs/:period/checks/:id/paid') markPaid(@Param('period') period: string, @Param('id') id: string, @Req() req: AccountRequest) {
+    if (req.account.role !== 'admin') throw new ForbiddenException('Administrator access required');
+    return this.service.markPaid(period, id, this.actor(req));
   }
   @Get('employees/:id/checks') history(@Param('id') id: string) {
     return this.service.history(id);

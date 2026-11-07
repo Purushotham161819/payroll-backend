@@ -1,3 +1,7 @@
+import { EmailService } from './email.service';
+import { PasswordResetService } from './password-reset.service';
+import { InvitationsService } from './invitations.service';
+import { InvitationMail } from './invitation-mail';
 import { PlatformController } from '../organizations/platform.controller';
 import { PlatformService } from '../organizations/platform.service';
 import { OrganizationSettingsController } from '../organizations/organization-settings.controller';
@@ -27,6 +31,10 @@ import { UsersService } from './users.service';
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     AuthService,
     UsersService,
+    InvitationsService,
+    InvitationMail,
+    EmailService,
+    PasswordResetService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Query,
   Post,
   Body,
   Patch,
@@ -22,8 +23,10 @@ export class EmployeesController {
   }
 
   @Get()
-  findAll() {
-    return this.employeesService.findAll();
+  findAll(@Query() query: Record<string,string> = {}) {
+    return query.page !== undefined || query.pageSize !== undefined
+      ? this.employeesService.findPage(query)
+      : this.employeesService.findAll();
   }
 
   @Delete(':id')

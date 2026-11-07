@@ -1,3 +1,7 @@
+import { EmailService } from './email.service';
+import { InvitationsService } from './invitations.service';
+import { hashPassword } from './password-hashing';
+import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -11,7 +15,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import * as argon2 from 'argon2';
 import { User } from './auth.schema';
-import { CreateUserDto, UserDetailsDto } from './users.dto';
+import { InviteUserDto, UserDetailsDto } from './users.dto';
 import {
   initializeUserIndexes,
   publicUser,
@@ -21,11 +25,21 @@ import {
 @Injectable()
 export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
-  constructor(@InjectModel('AuthUser') private readonly users: Model<User>) {}
+  constructor(
+    @InjectModel('AuthUser') private readonly users: Model<User>,
+    private readonly invitations: InvitationsService,
+    private readonly mail: EmailService,
+  ) {}
   async onModuleInit() {
     await initializeUserIndexes(this.users);
-    if (await this.users.db.collection<{ _id: string }>('auth_management_locks').findOne({ _id: 'accounts' }, { projection: { _id: 1 } })) {
-      this.logger.warn('User indexes are ready; startup can continue while an account-operation lock exists. Account writes remain protected. Let an active operation finish; if the lock is abandoned, use the documented operator recovery procedure after verifying all writers are stopped. No lock was removed.');
+    if (
+      await this.users.db
+        .collection<{ _id: string }>('auth_management_locks')
+        .findOne({ _id: 'accounts' }, { projection: { _id: 1 } })
+    ) {
+      this.logger.warn(
+        'User indexes are ready; startup can continue while an account-operation lock exists. Account writes remain protected. Let an active operation finish; if the lock is abandoned, use the documented operator recovery procedure after verifying all writers are stopped. No lock was removed.',
+      );
     }
   }
   async requireAdmin(id: string, version: number) {
@@ -36,13 +50,29 @@ export class UsersService implements OnModuleInit {
       (actor.sessionVersion ?? 0) !== version
     )
       throw new ForbiddenException('Administrator access required');
-    if (actor.mustChangePassword) throw new ForbiddenException('Change your temporary password before continuing');
-    if (actor.organizationId && !await this.users.db.collection('organizations').findOne({ organizationId: actor.organizationId, status: 'active' })) throw new ForbiddenException('Organization access is unavailable');
+    if (actor.mustChangePassword || actor.invitationPending)
+      throw new ForbiddenException(
+        'Change your temporary password before continuing',
+      );
+    if (
+      actor.organizationId &&
+      !(await this.users.db
+        .collection('organizations')
+        .findOne({ organizationId: actor.organizationId, status: 'active' }))
+    )
+      throw new ForbiddenException('Organization access is unavailable');
     return actor;
   }
   async list(actorId: string, version: number) {
     const actor = await this.requireAdmin(actorId, version);
-    return (await this.users.find({ organizationId: actor.organizationId ?? null, role: { $in: ['admin', 'user'] } }).sort({ createdAt: 1 })).map(publicUser);
+    return (
+      await this.users
+        .find({
+          organizationId: actor.organizationId ?? null,
+          role: { $in: ['admin', 'user'] },
+        })
+        .sort({ createdAt: 1 })
+    ).map(publicUser);
   }
   private async write<T>(
     actorId: string,
@@ -66,26 +96,44 @@ export class UsersService implements OnModuleInit {
     if (!isValidObjectId(id) || !/^[a-f\d]{24}$/i.test(id))
       throw new BadRequestException('Invalid user ID');
     const actor = await this.requireAdmin(actorId, version);
-    const user = await this.users.findOne({ _id: id, organizationId: actor.organizationId ?? null, role: { $in: ['admin', 'user'] } }).select('+sessionVersion');
+    const user = await this.users
+      .findOne({
+        _id: id,
+        organizationId: actor.organizationId ?? null,
+        role: { $in: ['admin', 'user'] },
+      })
+      .select('+sessionVersion +invitationSentAt');
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
-  async create(actorId: string, version: number, dto: CreateUserDto) {
-    return this.write(actorId, version, async () =>
-      publicUser(
-        await this.users.create({
-          organizationId: (await this.requireAdmin(actorId, version)).organizationId,
-          email: dto.email,
-          role: dto.role,
-          active: dto.active,
-          passwordHash: await argon2.hash(dto.password, {
-            type: argon2.argon2id,
-            memoryCost: 65536,
-            timeCost: 3,
-          }),
-        }),
-      ),
-    );
+  async create(actorId: string, version: number, dto: InviteUserDto) {
+    return this.write(actorId, version, async () => {
+      const actor = await this.requireAdmin(actorId, version);
+      const user = await this.users.create({
+        organizationId: actor.organizationId,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        email: dto.email,
+        role: dto.role,
+        active: dto.active,
+        invitationPending: true,
+        invitationDelivery: 'not_sent',
+        // An unknown random credential plus pending-login enforcement prevents bypass.
+        passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
+      });
+      const delivery = await this.invitations.send(user);
+      return { ...publicUser(user), ...delivery };
+    });
+  }
+  async resend(actorId: string, version: number, id: string) {
+    return this.write(actorId, version, async () => {
+      const user = await this.target(id, actorId, version);
+      if (!user.active)
+        throw new ConflictException(
+          'Activate this account before resending its invitation.',
+        );
+      return this.invitations.send(user);
+    });
   }
   async details(
     actorId: string,
@@ -101,15 +149,32 @@ export class UsersService implements OnModuleInit {
         );
       if (
         user.role === 'admin' &&
+        !user.invitationPending &&
         dto.role !== 'admin' &&
-        (await this.users.countDocuments({ role: 'admin', active: true, organizationId: user.organizationId ?? null })) <=
-          1 &&
+        (await this.users.countDocuments({
+          role: 'admin',
+          active: true,
+          invitationPending: { $ne: true },
+          organizationId: user.organizationId ?? null,
+        })) <= 1 &&
         user.active
       )
         throw new ConflictException(
           'The last active administrator must be preserved',
         );
       const changed = user.role !== dto.role || user.email !== dto.email;
+      if (user.invitationPending && user.email !== dto.email) {
+        user.invitationHash = undefined;
+        user.invitationExpiresAt = undefined;
+        user.invitationSentAt = undefined;
+        user.invitationDelivery = 'not_sent';
+      }
+      if (dto.firstName !== undefined) user.firstName = dto.firstName.trim();
+      if (dto.lastName !== undefined) user.lastName = dto.lastName.trim();
+      if (user.email !== dto.email) {
+        user.resetHash = undefined;
+        user.resetExpiresAt = undefined;
+      }
       user.email = dto.email;
       user.role = dto.role;
       if (changed) user.sessionVersion = (user.sessionVersion ?? 0) + 1;
@@ -126,13 +191,28 @@ export class UsersService implements OnModuleInit {
         !active &&
         user.active &&
         user.role === 'admin' &&
-        (await this.users.countDocuments({ role: 'admin', active: true })) <= 1
+        !user.invitationPending &&
+        (await this.users.countDocuments({
+          role: 'admin',
+          active: true,
+          invitationPending: { $ne: true },
+          organizationId: user.organizationId ?? null,
+        })) <= 1
       )
         throw new ConflictException(
           'The last active administrator must be preserved',
         );
       if (user.active !== active)
         user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+      if (!active && user.invitationPending) {
+        user.invitationHash = undefined;
+        user.invitationExpiresAt = undefined;
+        user.invitationDelivery = 'not_sent';
+      }
+      if (!active) {
+        user.resetHash = undefined;
+        user.resetExpiresAt = undefined;
+      }
       user.active = active;
       await user.save();
       return publicUser(user);
@@ -151,8 +231,11 @@ export class UsersService implements OnModuleInit {
         memoryCost: 65536,
         timeCost: 3,
       });
+      user.resetHash = undefined;
+      user.resetExpiresAt = undefined;
       user.sessionVersion = (user.sessionVersion ?? 0) + 1;
       await user.save();
+      await this.mail.passwordChanged(user.email);
       return {
         message: 'Password changed. Existing sessions have been invalidated.',
       };
