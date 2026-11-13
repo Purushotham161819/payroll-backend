@@ -11,6 +11,8 @@ import { randomBytes } from 'node:crypto';
 import { withAccountLock } from './account-storage';
 import { hashPassword } from './password-hashing';
 import { User } from './auth.schema';
+import { linkedEmployee } from './employee-access';
+import { employeeAccountAudit } from './employee-account-audit';
 
 @Injectable()
 export class AuthService {
@@ -52,6 +54,15 @@ export class AuthService {
     await this.organizationActive(user);
     return this.identity(user);
   }
+  async recordEmployeeLogin(id: string, version: number) {
+    const at = new Date();
+    const result = await this.users.updateOne({ _id: id, role: 'employee', active: true,
+      invitationPending: { $ne: true }, sessionVersion: version }, {
+      $max: { lastLoginAt: at },
+      ...employeeAccountAudit('employee', ['login.succeeded'], id, at),
+    });
+    if (result.matchedCount !== 1) throw new UnauthorizedException('Authentication required');
+  }
   private identity(user: User & { id: string }) {
     return {
       id: user.id,
@@ -60,10 +71,12 @@ export class AuthService {
       ...(user.lastName ? { lastName: user.lastName } : {}),
       role: user.role,
       ...(user.organizationId ? { organizationId: user.organizationId } : {}),
+      ...(user.role === 'employee' ? { employeeRecordId: user.employeeRecordId } : {}),
       ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
     };
   }
   private async organizationActive(user: User) {
+    if (user.role === 'employee') await linkedEmployee(this.users.db, user);
     if (
       user.organizationId &&
       !(await this.users.db

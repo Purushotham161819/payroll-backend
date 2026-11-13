@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import type { EmployeeAccountEvent } from './employee-account-audit';
 
 export interface User {
   resetHash?: string;
@@ -17,7 +18,18 @@ export interface User {
   role: string;
   sessionVersion: number;
   organizationId?: string;
+  employeeRecordId?: string;
+  employeeLifecycleVersion?: number;
   mustChangePassword?: boolean;
+  portalInvitationSentAt?: Date;
+  invitationAcceptedAt?: Date;
+  passwordSetupAt?: Date;
+  accountActivatedAt?: Date;
+  lastLoginAt?: Date;
+  invitationCancelledAt?: Date;
+  accessRevokedAt?: Date;
+  accessRestoredAt?: Date;
+  portalAudit?: EmployeeAccountEvent[];
 }
 export const UserSchema = new Schema<User>(
   {
@@ -42,12 +54,27 @@ export const UserSchema = new Schema<User>(
     active: { type: Boolean, default: true },
     role: {
       type: String,
-      enum: ['admin', 'user', 'super_admin'],
+      enum: ['admin', 'user', 'super_admin', 'employee'],
       default: 'user',
     },
     organizationId: { type: String, immutable: true, index: true },
+    employeeRecordId: { type: String, immutable: true },
+    employeeLifecycleVersion: { type: Number },
+    portalInvitationSentAt: Date,
+    invitationAcceptedAt: Date,
+    passwordSetupAt: Date,
+    accountActivatedAt: Date,
+    lastLoginAt: Date,
+    invitationCancelledAt: Date,
+    accessRevokedAt: Date,
+    accessRestoredAt: Date,
+    portalAudit: { type: [{ _id: false, action: String, actorId: String, at: Date }], default: undefined, select: false },
     mustChangePassword: { type: Boolean, default: false },
     sessionVersion: { type: Number, default: 0, select: false },
   },
   { timestamps: true },
 );
+UserSchema.index({ organizationId: 1, employeeRecordId: 1 }, {
+  unique: true,
+  partialFilterExpression: { role: 'employee', employeeRecordId: { $type: 'string' } },
+});

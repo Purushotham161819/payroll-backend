@@ -12,11 +12,12 @@ import {
 import type { Request, Response } from 'express';
 import { RunPayrollService } from './run-payroll.service';
 import type { RunRequest, SubmitPayrollRequest } from './run-payroll.dto';
+import { PrivateModeService, PrivateRequest } from '../auth/private-mode.service';
 
 type AccountRequest = Request & { account: { id: string; email: string; role?: string } };
 @Controller('payroll')
 export class RunPayrollController {
-  constructor(private readonly service: RunPayrollService) {}
+  constructor(private readonly service: RunPayrollService, private readonly privacy?: PrivateModeService) {}
   private actor(req: AccountRequest) {
     return req.account.id;
   }
@@ -54,8 +55,13 @@ export class RunPayrollController {
     @Param('period') period: string,
     @Param('id') id: string,
     @Res() res: Response,
+    @Req() req?: AccountRequest,
   ) {
     const pdf = await this.service.pdf(period, id);
+    if (req?.account.role === 'employee') {
+      if (!this.privacy) throw new ForbiddenException('Private Mode authorization required.');
+      await this.privacy.requireUnlocked(req as PrivateRequest);
+    }
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="Payslip_${period}_${id}.pdf"`,

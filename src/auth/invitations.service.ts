@@ -10,6 +10,8 @@ import { User } from './auth.schema';
 import { InvitationMail } from './invitation-mail';
 import { hashPassword } from './password-hashing';
 import { withAccountLock } from './account-storage';
+import { linkedEmployee } from './employee-access';
+import { employeeAccountAudit } from './employee-account-audit';
 
 const invalidMessage =
   'This invitation is invalid, expired, already used, or unavailable. Contact your organization administrator for a new invitation.';
@@ -33,14 +35,15 @@ export class InvitationsService {
     if (
       url.origin !== origin ||
       (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') ||
+      (process.env.NODE_ENV === 'production' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) ||
       !['http:', 'https:'].includes(url.protocol)
     )
       throw new Error('Invalid frontend origin');
     return origin;
   }
   // Caller holds the existing account-operation lock, including during delivery.
-  async send(user: HydratedDocument<User>) {
-    if (!user.invitationPending || !['admin', 'user'].includes(user.role))
+  async send(user: HydratedDocument<User>, actorId?: string) {
+    if (!user.invitationPending || !['admin', 'user', 'employee'].includes(user.role))
       throw new ConflictException(
         'This account does not have a pending invitation',
       );
@@ -67,6 +70,8 @@ export class InvitationsService {
       };
     }
     const token = randomBytes(32).toString('base64url');
+    const resent = !!(user.portalInvitationSentAt || user.invitationSentAt);
+    user.invitationCancelledAt = undefined;
     user.invitationHash = tokenHash(token);
     user.invitationExpiresAt = new Date(Date.now() + hours * 3_600_000);
     user.invitationSentAt = new Date();
@@ -80,6 +85,7 @@ export class InvitationsService {
         user.lastName ?? '',
         `${origin}/set-password#token=${token}`,
         hours,
+        user.role === 'employee',
       );
     } catch {
       user.invitationHash = undefined;
@@ -93,7 +99,13 @@ export class InvitationsService {
       };
     }
     user.invitationDelivery = 'sent';
-    await user.save();
+    if (user.role === 'employee') {
+      const at = new Date();
+      await this.users.updateOne({ _id: user._id }, {
+        $set: { portalInvitationSentAt: at, invitationDelivery: 'sent' },
+        ...employeeAccountAudit(user.role, [resent ? 'invitation.resent' : 'invitation.sent'], actorId ?? user.id, at),
+      });
+    } else await user.save();
     return {
       invitationSent: true,
       message:
@@ -108,10 +120,10 @@ export class InvitationsService {
         invitationHash: tokenHash(token),
         invitationPending: true,
         active: true,
-        role: { $in: ['admin', 'user'] },
+        role: { $in: ['admin', 'user', 'employee'] },
         invitationExpiresAt: { $gt: new Date() },
       })
-      .select('+invitationHash +invitationExpiresAt +sessionVersion');
+      .select('+invitationHash +invitationExpiresAt +sessionVersion +invitationSentAt');
     if (
       !user ||
       (user.organizationId &&
@@ -120,6 +132,10 @@ export class InvitationsService {
           .findOne({ organizationId: user.organizationId, status: 'active' })))
     )
       throw new BadRequestException(invalidMessage);
+    if (user.role === 'employee') {
+      try { await linkedEmployee(this.users.db, user); }
+      catch { throw new BadRequestException(invalidMessage); }
+    }
     return user;
   }
   async inspect(token: string) {
@@ -141,6 +157,7 @@ export class InvitationsService {
     return withAccountLock(this.users, async () => {
       const user = await this.valid(token);
       const passwordHash = await hashPassword(password);
+      const at = new Date();
       const result = await this.users.updateOne(
         {
           _id: user._id,
@@ -155,8 +172,12 @@ export class InvitationsService {
             passwordHash,
             invitationPending: false,
             mustChangePassword: false,
+            ...(user.role === 'employee' ? { invitationAcceptedAt: at, passwordSetupAt: at, accountActivatedAt: at,
+              // Older pending invitations already have a real sent timestamp; retain it before cleanup.
+              ...(!user.portalInvitationSentAt && user.invitationDelivery === 'sent' && user.invitationSentAt ? { portalInvitationSentAt: user.invitationSentAt } : {}) } : {}),
           },
           $inc: { sessionVersion: 1 },
+          ...employeeAccountAudit(user.role, ['invitation.accepted', 'password.setup_completed', 'account.activated'], user.id, at),
           $unset: {
             invitationHash: '',
             invitationExpiresAt: '',

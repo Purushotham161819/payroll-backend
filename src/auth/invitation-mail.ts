@@ -33,7 +33,15 @@ export class InvitationMail {
     lastName: string,
     url: string,
     hours: number,
+    employee = false,
   ) {
-    await this.email.send(to, invitationEmail(firstName, lastName, url, hours));
+    const content = invitationEmail(firstName, lastName, url, hours);
+    if (employee) {
+      content.subject = 'Welcome to PayStream \u2013 Set Up Your Employee Account';
+      const introduction = 'Your organization has invited you to the PayStream Employee Portal. Once activated, you can securely view your employee profile and Pay Checks.';
+      content.text = content.text.replace('Your account has been created.', introduction);
+      content.html = content.html.replace('Your account has been created successfully. We are pleased to have you on board.', introduction);
+    }
+    await this.email.send(to, content);
   }
 }

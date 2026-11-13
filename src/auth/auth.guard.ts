@@ -11,6 +11,8 @@ import { OrganizationSettingsController } from '../organizations/organization-se
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersController } from './users.controller';
+import { employeeRequestAllowed } from './employee-access';
+import { PrivateModeService, PrivateRequest } from './private-mode.service';
 
 declare module 'express-session' {
   interface SessionData {
@@ -22,7 +24,7 @@ declare module 'express-session' {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService, private readonly privacy?: PrivateModeService) {}
   async canActivate(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest<Request>();
     const login =
@@ -52,6 +54,13 @@ export class AuthGuard implements CanActivate {
         req.session.sessionVersion ?? 0,
       );
       (req as Request & { account: typeof user }).account = user;
+      if (user.role === 'employee' && context.getClass() !== AuthController &&
+          !employeeRequestAllowed(req.method, req.path, user.employeeRecordId ?? ''))
+        throw new ForbiddenException('Employee accounts have read-only access to their own profile.');
+      if (user.role === 'employee' && req.path.endsWith('/pdf')) {
+        if (!this.privacy) throw new ForbiddenException('Private Mode authorization required.');
+        await this.privacy.requireUnlocked(req as PrivateRequest);
+      }
       const platform = context.getClass() === PlatformController;
       if (platform && user.role !== 'super_admin')
         throw new ForbiddenException('Super Admin access required');

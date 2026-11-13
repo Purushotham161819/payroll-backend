@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { createHash, randomBytes } from 'node:crypto';
 import { User } from './auth.schema';
+import { linkedEmployee } from './employee-access';
 import { withAccountLock } from './account-storage';
 import { hashPassword } from './password-hashing';
 import { EmailService, securityEmail } from './email.service';
@@ -47,6 +48,9 @@ export class PasswordResetService {
     private readonly mail: EmailService,
   ) {}
   private async eligible(user: User) {
+    if (user.role === 'employee') {
+      try { await linkedEmployee(this.users.db, user); } catch { return false; }
+    }
     return (
       user.active &&
       !user.invitationPending &&

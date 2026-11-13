@@ -80,6 +80,13 @@ export class AuthController {
     await new Promise<void>((resolve, reject) =>
       req.session.save((err) => (err ? reject(err) : resolve())),
     );
+    if (user.role === 'employee') {
+      try { await this.auth.recordEmployeeLogin(user.id, user.sessionVersion); }
+      catch (error) {
+        await new Promise<void>((resolve) => req.session.destroy(() => resolve()));
+        throw error;
+      }
+    }
     const { sessionVersion: _version, ...identity } = user;
     return identity;
   }

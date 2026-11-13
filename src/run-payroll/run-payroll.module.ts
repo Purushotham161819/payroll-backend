@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { BusinessModelsModule } from '../organizations/business-models.module';
 import { Employee, EmployeeSchema } from '../employees/schemas/employee.schema';
 import { SalaryComponentsModule } from '../salary-components/salary-components.module';
@@ -11,6 +12,7 @@ import { IncomeTaxModule } from '../income-tax/income-tax.module';
 
 @Module({
   imports: [
+    AuthModule,
     IncomeTaxModule,
     PayrollCalculationModule,
     SalaryComponentsModule,

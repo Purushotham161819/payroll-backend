@@ -1,4 +1,9 @@
 import { EmailService } from './email.service';
+import { PrivateModeService } from './private-mode.service';
+import { PrivateModeController } from './private-mode.controller';
+import { PrivateModeInterceptor } from './private-mode.interceptor';
+import { EmployeeAccountsService } from './employee-accounts.service';
+import { EmployeeAccountsController, EmployeePortalController } from './employee-accounts.controller';
 import { PasswordResetService } from './password-reset.service';
 import { InvitationsService } from './invitations.service';
 import { InvitationMail } from './invitation-mail';
@@ -21,12 +26,17 @@ import { UsersService } from './users.service';
     MongooseModule.forFeature([{ name: 'AuthUser', schema: UserSchema }]),
   ],
   controllers: [
+    PrivateModeController,
+    EmployeeAccountsController, EmployeePortalController,
     AuthController,
     UsersController,
     PlatformController,
     OrganizationSettingsController,
   ],
   providers: [
+    PrivateModeService,
+    { provide: APP_INTERCEPTOR, useClass: PrivateModeInterceptor },
+    EmployeeAccountsService,
     PlatformService,
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     AuthService,
@@ -37,5 +47,6 @@ import { UsersService } from './users.service';
     PasswordResetService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
+  exports: [PrivateModeService],
 })
 export class AuthModule {}
